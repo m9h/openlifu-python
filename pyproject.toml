@@ -11,7 +11,7 @@ authors = [
 description = "Openwater Focused Ultrasound Toolkit"
 readme = "README.rst"
 license.file = "LICENSE"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
   "Development Status :: 1 - Planning",
   "Intended Audience :: Science/Research",
@@ -30,7 +30,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
   "xarray[io]",
-  "numpy<2",
+  "numpy",
   "matplotlib",
   "pandas",
   "scipy",
@@ -52,13 +52,16 @@ dependencies = [
   "onnxruntime==1.18.0",
   "pydicom",
   "watchdog",
-  "python-socketio[client]"
+  "python-socketio[client]",
+  "jwave @ git+https://github.com/ucl-bug/jwave.git@main",
+  "jaxdf>=0.3.0",
+  "jax>=0.9.0",
 ]
 
 [project.optional-dependencies]
 jwave = [
-  "jwave>=0.2.1",
-  "jax[cpu]",
+  "jwave @ git+https://github.com/ucl-bug/jwave.git@main",
+  "jax>=0.9.0",
 ]
 test = [
   "pytest >=6",
@@ -89,6 +92,7 @@ Changelog = "https://github.com/OpenwaterHealth/OpenLIFU-python/releases"
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/openlifu/_version.py"
+metadata.allow-direct-references = true
 
 [tool.hatch.envs.default]
 features = ["test"]
