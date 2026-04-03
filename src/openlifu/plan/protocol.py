@@ -23,7 +23,6 @@ from openlifu.plan.solution_analysis import SolutionAnalysis, SolutionAnalysisOp
 from openlifu.plan.target_constraints import TargetConstraints
 from openlifu.sim import run_simulation
 from openlifu.util.annotations import OpenLIFUFieldData
-from openlifu.util.checkgpu import gpu_available
 from openlifu.util.json import PYFUSEncoder
 from openlifu.virtual_fit import VirtualFitOptions
 from openlifu.xdc import Transducer
@@ -250,7 +249,7 @@ class Protocol:
         sim_options: sim.SimSetup | None = None,
         analysis_options: SolutionAnalysisOptions | None = None,
         on_pulse_mismatch: OnPulseMismatchAction = OnPulseMismatchAction.ERROR,
-        use_gpu: bool | None = None,
+        sim_backend: str = "kwave",
         voltage: float = 1.0
     ) -> Tuple[Solution, xa.DataArray, SolutionAnalysis]:
         """Calculate the solution and aggregated k-wave simulation outputs.
@@ -280,8 +279,7 @@ class Protocol:
             on_pulse_mismatch: plan.protocol.OnPulseMismatchAction
                 An action to take if the number of pulses in the sequence does not match
                 the number of foci (Default: OnPulseMismatchAction.ERROR).
-            use_gpu: Whether to use GPU in the simulation. If not provided then a GPU will be used
-                if available, with CPU as a fallback.
+            sim_backend: Simulation backend to use. "kwave" or "jwave".
 
         Returns:
             solution: Solution
@@ -291,9 +289,6 @@ class Protocol:
             scaled_solution_analysis: SolutionAnalysis
                 This is the resulting rescaled analysis, if scale is enabled.
         """
-        if use_gpu is None:
-            use_gpu = gpu_available()
-
         if sim_options is None:
             sim_options = self.sim_setup
         if analysis_options is None:
@@ -321,18 +316,20 @@ class Protocol:
             simulation_output_xarray = None
             if simulate:
                 self.logger.info(f"Simulate for focus {focus}...")
-                simulation_output_xarray, _ = run_simulation(
+                sim_kwargs = dict(
                     arr=transducer,
                     params=params,
                     delays=delays,
-                    apod= apodization,
-                    freq = self.pulse.frequency,
-                    cycles = simulation_cycles,
+                    apod=apodization,
+                    freq=self.pulse.frequency,
+                    cycles=simulation_cycles,
                     dt=sim_options.dt,
                     t_end=sim_options.t_end,
                     cfl=sim_options.cfl,
-                    amplitude = self.pulse.amplitude * voltage,
-                    gpu = use_gpu
+                    amplitude=self.pulse.amplitude * voltage,
+                )
+                simulation_output_xarray, _ = run_simulation(
+                    backend=sim_backend, **sim_kwargs
                 )
             delays_to_stack.append(delays)
             apodizations_to_stack.append(apodization)

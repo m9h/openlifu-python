@@ -110,16 +110,14 @@ def test_fix_pulse_mismatch(
         elif on_pulse_mismatch is OnPulseMismatchAction.ROUNDDOWN:
             assert example_protocol.sequence.pulse_count == num_foci
 
-@pytest.mark.parametrize("use_gpu", [True, False, None])
-@pytest.mark.parametrize("gpu_is_available", [True, False])
-def test_calc_solution_use_gpu(
+@pytest.mark.parametrize("sim_backend", ["kwave", "jwave"])
+def test_calc_solution_sim_backend(
     mocker:MockerFixture,
     example_protocol:Protocol,
     example_transducer:Transducer,
-    use_gpu:bool | None,
-    gpu_is_available:bool,
+    sim_backend:str,
 ):
-    """Test that the correct value of use_gpu is passed to the simulation runner"""
+    """Test that the correct simulation backend is passed to the dispatcher"""
     example_simulation_output = xa.Dataset(
         {
             'p_min': xa.DataArray(data=np.empty((3, 2, 3)), dims=["x", "y", "z"], attrs={'units': "Pa"}),
@@ -132,10 +130,6 @@ def test_calc_solution_use_gpu(
             'z': xa.DataArray(dims=["z"], data=np.linspace(0, 1, 3), attrs={'units': "m"}),
         },
     )
-    mocker.patch(
-        "openlifu.plan.protocol.gpu_available",
-        return_value = gpu_is_available,
-    )
     run_simulation_mock = mocker.patch(
         "openlifu.plan.protocol.run_simulation",
         return_value = (example_simulation_output, None),
@@ -145,10 +139,7 @@ def test_calc_solution_use_gpu(
         transducer = example_transducer,
         simulate = True,
         scale = False,
-        use_gpu=use_gpu,
+        sim_backend=sim_backend,
     )
     args, kwargs = run_simulation_mock.call_args
-    if use_gpu is None:
-        assert kwargs['gpu'] == gpu_is_available
-    else:
-        assert kwargs['gpu'] == use_gpu
+    assert kwargs['backend'] == sim_backend
