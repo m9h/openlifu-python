@@ -137,12 +137,19 @@ def build_bm4_phantom(dx_mm: float = DX_MM) -> tuple[xa.Dataset, xa.Coordinates]
 def build_bowl_transducer(freq_hz: float = FREQ_HZ,
                           roc_mm: float = ROC_MM,
                           aperture_mm: float = APERTURE_MM,
-                          n_elements: int = 64):
+                          n_elements: int = 256):
     """Build a focused bowl transducer approximated by point elements on the bowl surface.
 
-    Elements are distributed on the bowl surface within the aperture.
-    Positions are in meters with the bowl center at (ROC, 0, 0) and
-    elements distributed on the concave surface facing +x.
+    The bowl is a spherical cap with center of curvature at (ROC, 0, 0).
+    Elements lie on the concave surface, opening toward +x.
+    The rear of the bowl (vertex) is at x=0.
+    The geometric focus is at (ROC, 0, 0).
+
+    Half-opening angle: sin(theta_max) = (aperture/2) / ROC
+    Element positions:
+        x = ROC * (1 - cos(theta))
+        y = ROC * sin(theta) * cos(phi)
+        z = ROC * sin(theta) * sin(phi)
     """
     from openlifu.xdc.element import Element
     from openlifu.xdc.transducer import Transducer
@@ -151,29 +158,36 @@ def build_bowl_transducer(freq_hz: float = FREQ_HZ,
     aperture_m = aperture_mm * 1e-3
     half_angle = np.arcsin(aperture_m / (2 * roc_m))
 
-    # Distribute elements on the bowl using Fibonacci sphere sampling
+    # Fibonacci spiral distribution on spherical cap [0, half_angle]
     elements = []
     golden_ratio = (1 + np.sqrt(5)) / 2
     for i in range(n_elements):
-        theta = np.arccos(1 - 2 * (i + 0.5) / n_elements)
+        # Map uniform distribution [0,1] to cos(theta) in [cos(half_angle), 1]
+        cos_min = np.cos(half_angle)
+        cos_theta = cos_min + (1 - cos_min) * (i + 0.5) / n_elements
+        theta = np.arccos(cos_theta)
         phi = 2 * np.pi * i / golden_ratio
 
-        # Only keep elements within the aperture half-angle
-        if theta > half_angle:
-            # Remap to stay within aperture
-            theta = half_angle * (i + 0.5) / n_elements
-
-        # Position on bowl surface (bowl opens toward +x, center at origin)
-        x = -roc_m * np.cos(theta)
+        # Bowl vertex at x=0, focus at x=ROC
+        x = roc_m * (1 - np.cos(theta))
         y = roc_m * np.sin(theta) * np.cos(phi)
         z = roc_m * np.sin(theta) * np.sin(phi)
 
         elements.append(Element(
             index=i,
             position=np.array([x, y, z]),
-            size=np.array([2e-3, 2e-3]),
+            size=np.array([1e-3, 1e-3]),
             units="m",
         ))
+
+    log.info("  Bowl: ROC=%.0f mm, aperture=%.0f mm, half_angle=%.1f deg",
+             roc_mm, aperture_mm, np.degrees(half_angle))
+    log.info("  Element x range: %.1f to %.1f mm",
+             min(e.position[0] for e in elements) * 1e3,
+             max(e.position[0] for e in elements) * 1e3)
+    log.info("  Element y range: %.1f to %.1f mm",
+             min(e.position[1] for e in elements) * 1e3,
+             max(e.position[1] for e in elements) * 1e3)
 
     return Transducer(
         id="itrusst_bowl_sc1",
@@ -259,13 +273,16 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
     tx = build_bowl_transducer()
     log.info("  %d elements", tx.numelements())
 
-    log.info("Running jwave simulation...")
+    # Use enough cycles to reach steady state: ~2 transit times across the grid
+    # Transit time = 120mm / 1500 m/s = 80us = 40 cycles at 500 kHz
+    n_cycles = 60
+    log.info("Running jwave simulation (%d cycles)...", n_cycles)
     t0 = time.perf_counter()
     ds, raw = run_simulation(
         arr=tx,
         params=params,
         freq=FREQ_HZ,
-        cycles=20,
+        cycles=n_cycles,
         amplitude=SOURCE_PRESSURE,
         cfl=0.3,
         pml_size=10,
@@ -273,22 +290,41 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
     sim_time = time.perf_counter() - t0
     log.info("Simulation complete in %.1fs", sim_time)
 
-    # Extract central 2D slice (z=0)
-    mid_z = ds.p_max.shape[2] // 2
-    p_max_2d = ds.p_max.data[:, :, mid_z]
+    # Extract steady-state pressure amplitude from the last few cycles.
+    # The ITRUSST benchmark expects p_amp (CW amplitude), not p_max.
+    # We compute the amplitude from the last 2 cycles of the time series.
+    p_all = raw["pressure"]  # (Nt, Nx, Ny, Nz)
+    period_samples = max(1, int(round(1.0 / (FREQ_HZ * raw.get("dt", ds.p_max.shape[0])))))
+    # Approximate: use last 20% of time steps to capture steady state
+    n_tail = max(2, p_all.shape[0] // 5)
+    p_tail = p_all[-n_tail:]
+    # Pressure amplitude = (max - min) / 2 over the tail window
+    p_amp_3d = (p_tail.max(axis=0) - p_tail.min(axis=0)) / 2.0
+
+    # Central 2D slice (z=0)
+    mid_z = p_amp_3d.shape[2] // 2
+    p_amp_2d = p_amp_3d[:, :, mid_z]
+
+    # Also keep p_max for comparison
+    mid_z_ds = ds.p_max.shape[2] // 2
+    p_max_2d = ds.p_max.data[:, :, mid_z_ds]
 
     log.info("Results (central slice):")
-    log.info("  p_max: min=%.1f  max=%.1f Pa  (%.1f kPa)", p_max_2d.min(), p_max_2d.max(), p_max_2d.max() / 1e3)
+    log.info("  p_amp (steady-state): min=%.1f  max=%.1f Pa  (%.1f kPa)",
+             p_amp_2d.min(), p_amp_2d.max(), p_amp_2d.max() / 1e3)
+    log.info("  p_max (time-domain):  min=%.1f  max=%.1f Pa  (%.1f kPa)",
+             p_max_2d.min(), p_max_2d.max(), p_max_2d.max() / 1e3)
 
-    # Brain region metrics
+    # Brain region metrics (use p_amp for ITRUSST comparison)
     brain_start_mm = SKULL_START_MM + 10.5
     brain_idx = int(round(brain_start_mm / dx_mm))
-    p_brain = p_max_2d[brain_idx:]
+    p_brain = p_amp_2d[brain_idx:]
     peak_brain = p_brain.max()
     peak_idx = np.unravel_index(np.argmax(p_brain), p_brain.shape)
     peak_x_mm = (brain_idx + peak_idx[0]) * dx_mm
     peak_y_mm = peak_idx[1] * dx_mm - LATERAL_EXTENT_MM / 2
-    log.info("  Brain peak: %.1f kPa at (%.1f, %.1f) mm", peak_brain / 1e3, peak_x_mm, peak_y_mm)
+    log.info("  Brain peak (p_amp): %.1f kPa at (%.1f, %.1f) mm", peak_brain / 1e3, peak_x_mm, peak_y_mm)
+    log.info("  Expected focus: (%.1f, 0.0) mm", ROC_MM)
 
     # Compare against reference if provided
     if ref_path:
@@ -324,11 +360,11 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
 
             ax = axes[0]
             extent = [0, AXIAL_EXTENT_MM, -LATERAL_EXTENT_MM / 2, LATERAL_EXTENT_MM / 2]
-            im = ax.imshow(p_max_2d.T / 1e3, origin="lower", aspect="auto",
+            im = ax.imshow(p_amp_2d.T / 1e3, origin="lower", aspect="auto",
                            extent=extent, cmap="hot")
             ax.set_xlabel("Axial (mm)")
             ax.set_ylabel("Lateral (mm)")
-            ax.set_title("BM4-SC1: Peak Pressure (kPa)")
+            ax.set_title("BM4-SC1: Pressure Amplitude (kPa)")
             ax.axvline(SKULL_START_MM, color="cyan", ls="--", lw=0.8, label="Skull start")
             ax.axvline(brain_start_mm, color="lime", ls="--", lw=0.8, label="Brain start")
             ax.legend(fontsize=8)
@@ -383,7 +419,7 @@ try:
             "onnxruntime",
         )
         .add_local_dir("src/openlifu", "/root/openlifu_pkg/openlifu", copy=True)
-        .add_local_dir("benchmarks", "/root/openlifu_pkg/benchmarks", copy=True)
+        .add_local_file("benchmarks/itrusst_bm4.py", "/root/openlifu_pkg/benchmarks/itrusst_bm4.py", copy=True)
         .env({"PYTHONPATH": "/root/openlifu_pkg"})
     )
 
