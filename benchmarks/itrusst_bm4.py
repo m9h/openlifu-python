@@ -257,7 +257,7 @@ def compute_metrics(p_amp: np.ndarray, p_ref: np.ndarray,
 
 def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | None = None):
     """Run BM4 benchmark simulation and optionally compare against reference."""
-    from openlifu.sim.jwave_if import run_simulation
+    from openlifu.sim.jwave_if import run_cw_simulation
 
     log.info("Building BM4 phantom (dx=%.1f mm)...", dx_mm)
     params, coords = build_bm4_phantom(dx_mm=dx_mm)
@@ -273,47 +273,29 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
     tx = build_bowl_transducer()
     log.info("  %d elements", tx.numelements())
 
-    # Use enough cycles to reach steady state: ~2 transit times across the grid
-    # Transit time = 120mm / 1500 m/s = 80us = 40 cycles at 500 kHz
-    n_cycles = 60
-    log.info("Running jwave simulation (%d cycles)...", n_cycles)
+    # Use Helmholtz (frequency-domain) solver for steady-state CW pressure.
+    # This directly solves for p_amp — no time-stepping, no memory issues.
+    log.info("Running jwave Helmholtz solver...")
     t0 = time.perf_counter()
-    ds, raw = run_simulation(
+    ds, raw = run_cw_simulation(
         arr=tx,
         params=params,
         freq=FREQ_HZ,
-        cycles=n_cycles,
         amplitude=SOURCE_PRESSURE,
-        cfl=0.3,
         pml_size=10,
+        tol=1e-4,
+        maxiter=1000,
     )
     sim_time = time.perf_counter() - t0
     log.info("Simulation complete in %.1fs", sim_time)
 
-    # Extract steady-state pressure amplitude from the last few cycles.
-    # The ITRUSST benchmark expects p_amp (CW amplitude), not p_max.
-    # We compute the amplitude from the last 2 cycles of the time series.
-    p_all = raw["pressure"]  # (Nt, Nx, Ny, Nz)
-    period_samples = max(1, int(round(1.0 / (FREQ_HZ * raw.get("dt", ds.p_max.shape[0])))))
-    # Approximate: use last 20% of time steps to capture steady state
-    n_tail = max(2, p_all.shape[0] // 5)
-    p_tail = p_all[-n_tail:]
-    # Pressure amplitude = (max - min) / 2 over the tail window
-    p_amp_3d = (p_tail.max(axis=0) - p_tail.min(axis=0)) / 2.0
-
     # Central 2D slice (z=0)
-    mid_z = p_amp_3d.shape[2] // 2
-    p_amp_2d = p_amp_3d[:, :, mid_z]
-
-    # Also keep p_max for comparison
-    mid_z_ds = ds.p_max.shape[2] // 2
-    p_max_2d = ds.p_max.data[:, :, mid_z_ds]
+    mid_z = ds.p_amp.shape[2] // 2
+    p_amp_2d = ds.p_amp.data[:, :, mid_z]
 
     log.info("Results (central slice):")
-    log.info("  p_amp (steady-state): min=%.1f  max=%.1f Pa  (%.1f kPa)",
+    log.info("  p_amp: min=%.1f  max=%.1f Pa  (%.1f kPa)",
              p_amp_2d.min(), p_amp_2d.max(), p_amp_2d.max() / 1e3)
-    log.info("  p_max (time-domain):  min=%.1f  max=%.1f Pa  (%.1f kPa)",
-             p_max_2d.min(), p_max_2d.max(), p_max_2d.max() / 1e3)
 
     # Brain region metrics (use p_amp for ITRUSST comparison)
     brain_start_mm = SKULL_START_MM + 10.5
@@ -341,10 +323,10 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
             log.info("  Reference shape: %s", p_ref.shape)
 
         # If our grid differs from reference (0.5 mm), note it
-        if p_ref.shape != p_max_2d.shape:
+        if p_ref.shape != p_amp_2d.shape:
             log.warning("  Grid mismatch: ours=%s ref=%s (resample needed)", p_max_2d.shape, p_ref.shape)
         else:
-            metrics = compute_metrics(p_max_2d, p_ref, dx_mm, brain_idx)
+            metrics = compute_metrics(p_amp_2d, p_ref, dx_mm, brain_idx)
             log.info("  ITRUSST Metrics:")
             for k, v in metrics.items():
                 log.info("    %s: %.2f", k, v)
@@ -388,12 +370,12 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
 
     return {
         "sim_time_s": sim_time,
-        "grid_shape": list(ds.p_max.shape),
+        "grid_shape": list(ds.p_amp.shape),
         "dx_mm": dx_mm,
         "peak_pressure_kpa": float(peak_brain / 1e3),
         "peak_x_mm": float(peak_x_mm),
         "peak_y_mm": float(peak_y_mm),
-        "p_max_field_max_kpa": float(p_max_2d.max() / 1e3),
+        "p_amp_field_max_kpa": float(p_amp_2d.max() / 1e3),
     }
 
 
@@ -452,7 +434,7 @@ try:
         print(f"  Total time:     {wall_total:.1f}s")
         print(f"  Peak pressure:  {result['peak_pressure_kpa']:.1f} kPa (in brain)")
         print(f"  Peak position:  ({result['peak_x_mm']:.1f}, {result['peak_y_mm']:.1f}) mm")
-        print(f"  Field max:      {result['p_max_field_max_kpa']:.1f} kPa")
+        print(f"  Field max:      {result['p_amp_field_max_kpa']:.1f} kPa")
 
 except ImportError:
     pass
