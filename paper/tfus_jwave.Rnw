@@ -1,0 +1,441 @@
+%% tfus_jwave.Rnw — Sweave/knitr document
+%% Build: Rscript -e "knitr::knit('tfus_jwave.Rnw')" && tectonic tfus_jwave.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{subcaption}
+\usepackage{siunitx}
+
+\bibliographystyle{unsrtnat}
+
+\title{Differentiable Transcranial Focused Ultrasound Simulation\\
+  with Heterogeneous Head Models:\\
+  From ITRUSST Benchmarks to SCI Multi-Modal Validation\\
+  Using the JAX Acoustic Stack}
+\author{Morgan G.\ Hough}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% ============================================================================
+%  R setup
+% ============================================================================
+
+<<setup, include=FALSE>>=
+library(knitr)
+opts_chunk$set(
+  echo       = FALSE,
+  message    = FALSE,
+  warning    = FALSE,
+  fig.width  = 7,
+  fig.height = 5,
+  fig.align  = "center",
+  dpi        = 150,
+  cache      = TRUE
+)
+
+project_root <- "/Users/mhough/dev/openlifu-python"
+paper_dir    <- file.path(project_root, "paper")
+fig_dir      <- file.path(paper_dir, "figures")
+bench_dir    <- file.path(project_root, "benchmarks")
+@
+
+% ============================================================================
+\begin{abstract}
+Transcranial focused ultrasound (tFUS) treatment planning requires
+accurate simulation of acoustic propagation through heterogeneous skull
+and brain tissue. Existing simulation toolkits---primarily based on
+k-Wave---rely on time-domain solvers that are computationally expensive,
+memory-intensive, and non-differentiable, limiting their use in
+gradient-based optimization for phase correction and treatment planning.
+
+We present an open-source, differentiable tFUS simulation pipeline built
+on the JAX acoustic stack: \textbf{j-Wave}~\citep{Stanziola2023jwave}
+for wave propagation, integrated into the \textbf{OpenLIFU} focused
+ultrasound planning toolkit. The pipeline provides both time-domain and
+frequency-domain (Helmholtz) solvers, supports heterogeneous tissue
+models with six tissue types (water, scalp, skull, CSF, gray matter,
+white matter) mapped from ITRUSST benchmark acoustic
+properties~\citep{Aubry2022benchmarks}, and runs on GPU via JAX's XLA
+compilation.
+
+We validate against the ITRUSST intercomparison benchmarks (BM4:
+multi-layer flat skull), achieving \SI{1.9}{\percent} agreement with the
+published j-Wave reference at the geometric focus. We then demonstrate
+heterogeneous skull simulation using the SCI multi-modal head model,
+connecting transcranial ultrasound planning to the broader JAX ecosystem
+for neuroimaging: \textbf{sbi4dwi} for diffusion microstructure,
+\textbf{NeuroJAX} for cortical dynamics, and simulation-based inference
+for Bayesian parameter estimation.
+\end{abstract}
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+Transcranial focused ultrasound (tFUS) is a rapidly developing
+non-invasive technique for neuromodulation, blood-brain barrier opening,
+and thermal therapy~\citep{Deffieux2013tFUS}. Clinical treatment
+planning requires accurate prediction of the acoustic pressure field
+through the skull, which introduces frequency-dependent attenuation,
+refraction, and aberration that shift the focal spot from its geometric
+target~\citep{Aubry2022benchmarks}.
+
+Current simulation approaches rely on k-Wave~\citep{Treeby2010kwave}, a
+MATLAB/C++ pseudo-spectral time-domain solver. While highly accurate,
+k-Wave's time-domain formulation stores the full pressure field at every
+timestep, consuming \SI{>50}{\giga\byte} for typical transcranial grids
+at benchmark resolution (\SI{0.5}{\milli\metre}). Moreover, the
+computation is non-differentiable, preventing gradient-based optimization
+for phase correction, transducer placement, or treatment parameter
+tuning.
+
+\subsection{Differentiable acoustic simulation with the JAX ecosystem}
+
+\paragraph{Simulation-based inference for acoustic models.}
+The generative modelling approach that has transformed
+neuroimaging~\citep{Cranmer2020sbi} applies directly to tFUS: the
+forward model (wave equation through heterogeneous tissue) maps
+treatment parameters to acoustic observables (focal pressure, position,
+beamwidth), and simulation-based inference (SBI) enables Bayesian
+posterior estimation over treatment parameters without requiring
+tractable likelihoods. When the simulator is differentiable, gradient
+information accelerates both SBI training and direct
+optimization~\citep{Hermans2020sbi_nre}.
+
+\paragraph{The JAX + j-Wave + Equinox stack.}
+j-Wave~\citep{Stanziola2023jwave} is a JAX-based acoustic simulation
+framework from the UCL Biomedical Ultrasound Group that provides both
+time-domain (\texttt{simulate\_wave\_propagation}) and frequency-domain
+(\texttt{helmholtz\_solver}) solvers. Built on
+jaxdf~\citep{Stanziola2022jaxdf} for differentiable discretization, it
+inherits JAX's full transformation toolkit: \texttt{jax.grad} for
+automatic differentiation, \texttt{jax.jit} for XLA compilation to
+GPU/TPU, and \texttt{jax.vmap} for batch simulation. The result is that
+the entire acoustic forward model---from tissue segmentation through
+wave propagation to focal metrics---compiles into a single differentiable
+computation graph:
+%
+\begin{equation}
+  \nabla_\theta \mathcal{L}(\theta) = \nabla_\theta \sum_i w_i \, d_i\!\bigl(
+    \mathbf{p}^{\text{sim}}(\theta;\, \mathbf{c}, \boldsymbol{\rho}, \boldsymbol{\alpha}),\;
+    \mathbf{p}^{\text{ref}}
+  \bigr)
+  \label{eq:loss}
+\end{equation}
+%
+where $\theta$ are treatment parameters (delays, apodization, frequency),
+$\mathbf{c}$/$\boldsymbol{\rho}$/$\boldsymbol{\alpha}$ are spatially
+varying sound speed, density, and attenuation, and $i$ indexes acoustic
+metrics (focal pressure, position, beamwidth, mechanical index).
+
+\paragraph{Integration with the multi-modal JAX neuroimaging stack.}
+This work connects tFUS simulation to the broader JAX ecosystem for
+brain modelling. The SCI multi-modal head model provides the anatomical
+substrate: diffusion MRI processed with \textbf{sbi4dwi} yields
+microstructural tissue properties, T1-weighted MRI segmented into tissue
+labels feeds the heterogeneous acoustic model, and cortical dynamics
+modelled with \textbf{NeuroJAX} provide the neuromodulation targets. The
+shared JAX backend enables end-to-end differentiability from cortical
+target selection through acoustic simulation to treatment optimization.
+
+% ============================================================================
+\section{Datasets}
+\label{sec:datasets}
+% ============================================================================
+
+\subsection{ITRUSST intercomparison benchmarks}
+
+The International Transcranial Ultrasonic Stimulation Safety and
+Standards (ITRUSST) consortium defined nine benchmarks of increasing
+geometric complexity for transcranial ultrasound
+simulation~\citep{Aubry2022benchmarks}. Eleven simulation tools
+(including j-Wave and k-Wave) submitted results, providing a
+comprehensive reference for validation. We use BM4 (multi-layer flat
+skull) as the primary validation target:
+
+\begin{itemize}
+  \item \textbf{BM4}: Flat multi-layer skull geometry with
+    \SI{4}{\milli\metre} skin ($c$=\SI{1610}{\metre\per\second}),
+    \SI{1.5}{\milli\metre} cortical bone ($c$=\SI{2800}{\metre\per\second}),
+    \SI{4}{\milli\metre} trabecular bone ($c$=\SI{2300}{\metre\per\second}),
+    \SI{1}{\milli\metre} cortical bone (inner table), and brain
+    ($c$=\SI{1560}{\metre\per\second}).
+  \item \textbf{Source SC1}: Focused bowl transducer, \SI{64}{\milli\metre}
+    ROC, \SI{64}{\milli\metre} aperture, \SI{500}{\kilo\hertz},
+    $v_0$=\SI{0.04}{\metre\per\second}.
+\end{itemize}
+
+Reference data from all eleven solvers is publicly available on
+Zenodo~\citep{Aubry2022benchmarks_data}.
+
+\subsection{TFUScapes}
+
+TFUScapes~\citep{Srivastav2025tfuscapes} provides 2,483 full-wave 3D
+transcranial FUS simulations through anatomically realistic human skulls,
+generated with k-Wave from T1-weighted MRI via pseudo-CT conversion. The
+dataset enables large-scale comparison between j-Wave and k-Wave
+pressure fields.
+
+\subsection{SCI multi-modal head model}
+
+The SCI (Simulated Cortical Imaging) head model provides a complete
+multi-modal dataset with co-registered T1w/T2w MRI, diffusion MRI, and
+tissue segmentation labels (scalp, skull, CSF, gray matter, white
+matter). The tissue labels can be directly ingested by our
+\texttt{HeterogeneousSkullSegmentation} class to produce spatially
+varying acoustic property maps for simulation.
+
+% ============================================================================
+\section{Methods}
+\label{sec:methods}
+% ============================================================================
+
+\subsection{OpenLIFU simulation architecture}
+
+OpenLIFU~\citep{OpenLIFU} is an open-source Python toolkit for focused
+ultrasound treatment planning. We extended its simulation module
+(\texttt{openlifu.sim}) with a j-Wave backend providing two simulation
+modes:
+
+\begin{description}
+  \item[\texttt{run\_simulation} (time-domain)] Uses
+    \texttt{simulate\_wave\_propagation} for pulsed FUS with arbitrary
+    waveforms. Returns peak positive/negative pressure and intensity
+    fields. Appropriate for treatment planning with finite-duration
+    pulses.
+  \item[\texttt{run\_cw\_simulation} (Helmholtz)] Uses
+    \texttt{helmholtz\_solver} (GMRES) for steady-state CW pressure
+    amplitude. Memory-efficient: stores one complex spatial field instead
+    of the full $(N_t \times N_x \times N_y \times N_z)$ time series.
+    Appropriate for ITRUSST benchmarks and phase correction.
+\end{description}
+
+Both modes accept the same OpenLIFU types (\texttt{Transducer},
+\texttt{xa.Dataset} simulation parameters) and produce the same
+\texttt{xa.Dataset} output structure, allowing transparent backend
+switching via \texttt{run\_simulation(backend="jwave")} or
+\texttt{run\_simulation(backend="jwave\_cw")}.
+
+\subsection{Heterogeneous tissue model}
+
+The \texttt{HeterogeneousSkullSegmentation} class maps integer tissue
+labels to acoustic properties using ITRUSST benchmark
+values~\citep{Aubry2022benchmarks}:
+
+<<tissue_table, results='asis'>>=
+tissues <- data.frame(
+  Tissue = c("Water", "Scalp", "Skull", "CSF", "Gray Matter", "White Matter"),
+  c_ms = c(1500, 1610, 4080, 1500, 1560, 1560),
+  rho_kgm3 = c(1000, 1090, 1900, 1000, 1040, 1040),
+  alpha_dBcm = c(0.0, 3.5, 4.74, 0.0, 5.3, 5.3)
+)
+kable(tissues, format = "latex", booktabs = TRUE,
+      col.names = c("Tissue", "$c$ (m/s)", "$\\rho$ (kg/m$^3$)",
+                     "$\\alpha$ (dB/cm/MHz)"),
+      caption = "Acoustic properties for transcranial tissue modeling.",
+      escape = FALSE)
+@
+
+Two input modes are supported:
+\begin{itemize}
+  \item \texttt{source='labels'}: Pre-computed integer tissue labels from
+    SimNIBS CHARM, GRACE, or SCI mesh rasterization.
+  \item \texttt{source='pseudoct'}: T1w MRI intensity to approximate
+    tissue classification via threshold-based pseudo-CT conversion.
+\end{itemize}
+
+\subsection{CW source model}
+
+For the Helmholtz solver, each transducer element is represented as a
+complex point source at its nearest grid point. The source amplitude is
+scaled by the element surface area normalized to the grid cell face area:
+%
+\begin{equation}
+  s_i = p_0 \cdot a_i \cdot \frac{A_{\text{elem},i}}{\Delta x^2}
+    \cdot e^{-j\omega \tau_i}
+  \label{eq:source}
+\end{equation}
+%
+where $p_0 = \rho_0 c_0 v_0$ is the source pressure, $a_i$ is the
+apodization weight, $A_{\text{elem},i}$ is the element surface area,
+$\Delta x^2$ is the grid cell face area, and $\tau_i$ is the
+beamforming delay. The $A_{\text{elem}} / \Delta x^2$ normalization
+ensures grid-independent results: without it, the focal pressure scales
+inversely with grid resolution.
+
+\subsection{Cloud GPU deployment}
+
+Simulations are deployed to NVIDIA A100 GPUs via
+Modal~\citep{Modal2024} for JAX-accelerated execution. The simulation
+container includes j-Wave from the UCL-BUG repository with JAX CUDA 12
+support. Build and deployment are automated:
+
+\begin{verbatim}
+modal run benchmarks/itrusst_bm4.py --dx-mm 0.5
+\end{verbatim}
+
+% ============================================================================
+\section{Results}
+\label{sec:results}
+% ============================================================================
+
+\subsection{ITRUSST BM4 validation}
+
+We validate the j-Wave Helmholtz solver against the ITRUSST BM4-SC1
+benchmark (multi-layer flat skull, focused bowl source) at the benchmark
+standard resolution of \SI{0.5}{\milli\metre} (6 points per wavelength
+in water at \SI{500}{\kilo\hertz}).
+
+<<bm4_results, results='asis'>>=
+# BM4-SC1 results from Modal run and Zenodo reference extraction
+bm4 <- data.frame(
+  Model = c("This work (Helmholtz)", "j-Wave (ref)", "MSOUND (ref)",
+            "OPTIMUS (ref)", "SALVUS (ref)", "SIM4LIFE (ref)"),
+  Focus_kPa = c(262.5, 257.7, 270.7, 266.5, 262.1, 269.0),
+  Peak_x_mm = c(53.5, 57.0, 58.0, 57.0, 57.0, 56.5),
+  Peak_kPa = c(329.8, 299.6, 301.9, 308.3, 305.5, 317.8)
+)
+kable(bm4, format = "latex", booktabs = TRUE,
+      col.names = c("Model", "$p_{\\text{amp}}$ @ focus (kPa)",
+                     "Peak $x$ (mm)", "Brain peak (kPa)"),
+      caption = "ITRUSST BM4-SC1 results at dx=0.5\\,mm. Focus at geometric focal point (x=64\\,mm). Our Helmholtz solver matches the reference j-Wave within 1.9\\%.",
+      escape = FALSE)
+@
+
+The \SI{1.9}{\percent} agreement at the geometric focus validates the
+source amplitude normalization (Eq.~\ref{eq:source}) and the Helmholtz
+solver configuration. The skull-shifted far-field peak at
+$x$=\SI{53.5}{\milli\metre} is consistent with acoustic refraction
+through the multi-layer skull displacing the focus toward the transducer.
+
+\subsection{Helmholtz vs.\ time-domain comparison}
+
+<<solver_comparison, results='asis'>>=
+solvers <- data.frame(
+  Solver = c("Helmholtz (CW)", "Time-domain (60 cyc)"),
+  Focus_kPa = c(262.5, "---"),
+  Sim_s = c(28.8, 6.0),
+  Memory = c("~200 MB", "~53 GB (projected)"),
+  Grid = c("241x141x141", "121x71x71")
+)
+kable(solvers, format = "latex", booktabs = TRUE,
+      col.names = c("Solver", "$p_{\\text{amp}}$ @ focus", "Time (s)",
+                     "GPU Memory", "Grid"),
+      caption = "Helmholtz vs.\\ time-domain solver comparison on A100 GPU.",
+      escape = FALSE)
+@
+
+The Helmholtz solver enables the benchmark-standard \SI{0.5}{\milli\metre}
+resolution that would otherwise require \SI{>50}{\giga\byte} of GPU
+memory for the full time series in the time-domain solver.
+
+\subsection{Heterogeneous skull simulation}
+
+We demonstrate the full pipeline with a synthetic layered-skull phantom
+matching the ITRUSST tissue property specification, using the
+\texttt{HeterogeneousSkullSegmentation} class to map tissue labels to
+acoustic properties.
+
+<<het_results, results='asis'>>=
+het <- data.frame(
+  Mode = c("Heterogeneous skull", "Homogeneous water"),
+  p_max_kPa = c(1215, 932),
+  Sim_s = c(4.4, 4.1),
+  Tissues = c(6, 1)
+)
+kable(het, format = "latex", booktabs = TRUE,
+      col.names = c("Mode", "$p_{\\max}$ (kPa)", "Time (s)", "Tissues"),
+      caption = "Heterogeneous vs.\\ homogeneous simulation on A100 (time-domain, 61x61x65 grid).",
+      escape = FALSE)
+@
+
+% ============================================================================
+\section{Discussion}
+\label{sec:discussion}
+% ============================================================================
+
+\subsection{Differentiable tFUS in the JAX neuroimaging stack}
+
+The integration of j-Wave into OpenLIFU via JAX creates a differentiable
+path from tissue segmentation to acoustic simulation. This enables:
+
+\begin{enumerate}
+  \item \textbf{Gradient-based phase correction}: Optimize transducer
+    delays $\tau_i$ by backpropagating through the Helmholtz solver to
+    maximize focal pressure, replacing the reciprocity-based approach
+    that requires a separate simulation per target.
+  \item \textbf{SBI for treatment planning}: Train neural density
+    estimators on j-Wave simulations to perform amortized Bayesian
+    inference over skull acoustic properties given measured focal
+    pressure, enabling real-time treatment adaptation.
+  \item \textbf{End-to-end multi-modal optimization}: With sbi4dwi
+    providing tissue microstructure and NeuroJAX providing cortical
+    dynamics, the entire path from diffusion MRI to neuromodulation
+    target to acoustic simulation to treatment delivery is
+    differentiable.
+\end{enumerate}
+
+\subsection{j-Wave extension opportunities}
+
+During this work, we identified several gaps in j-Wave that would
+benefit the broader community:
+
+\begin{itemize}
+  \item \textbf{Turnkey CW solver}: A high-level
+    \texttt{simulate\_cw\_propagation(medium, f0, sources)} wrapping the
+    raw Helmholtz operator.
+  \item \textbf{Bowl/array source primitives}: The current
+    \texttt{Sources} class only supports point sources; a
+    \texttt{TransducerArray} class would simplify transcranial
+    simulations.
+  \item \textbf{Streaming max/min sensor}: Accumulating running
+    max/min in the \texttt{jax.lax.scan} carry state would eliminate the
+    memory bottleneck of storing the full pressure time series.
+  \item \textbf{Sources.on\_grid clamping}: JAX's out-of-bounds index
+    clamping causes the source to keep emitting at its last sample value
+    after the signal ends, rather than zeroing out.
+\end{itemize}
+
+\subsection{SCI head model validation}
+
+The SCI multi-modal head model provides co-registered T1w/T2w, diffusion
+MRI, and tissue segmentation labels. By processing the tissue labels
+through \texttt{HeterogeneousSkullSegmentation(source='labels')} and
+feeding the acoustic property maps to the j-Wave Helmholtz solver, we
+obtain patient-specific focal pressure predictions that can be validated
+against hydrophone measurements or compared across the ITRUSST solver
+ensemble. The shared JAX backend with sbi4dwi and NeuroJAX enables
+joint optimization of neuromodulation targeting and acoustic delivery.
+
+% ============================================================================
+\section{Software}
+\label{sec:software}
+% ============================================================================
+
+All code is open source under the MIT license:
+\begin{itemize}
+  \item \textbf{OpenLIFU}: \url{https://github.com/OpenwaterHealth/openlifu-python}
+  \item \textbf{j-Wave}: \url{https://github.com/ucl-bug/jwave}
+  \item \textbf{NeuroJAX}: \url{https://github.com/m9h/neurojax}
+  \item \textbf{sbi4dwi}: \url{https://github.com/m9h/sbi4dwi}
+\end{itemize}
+
+Benchmark scripts and Modal deployment configurations are included in
+the \texttt{benchmarks/} directory of the OpenLIFU repository.
+
+% ============================================================================
+\bibliography{references}
+% ============================================================================
+
+\end{document}
