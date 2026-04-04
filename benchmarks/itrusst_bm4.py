@@ -308,6 +308,18 @@ def run_bm4(dx_mm: float = 1.0, ref_path: str | None = None, save_png: str | Non
     log.info("  Brain peak (p_amp): %.1f kPa at (%.1f, %.1f) mm", peak_brain / 1e3, peak_x_mm, peak_y_mm)
     log.info("  Expected focus: (%.1f, 0.0) mm", ROC_MM)
 
+    # Log pressure along the axial profile through center
+    mid_y = p_amp_2d.shape[1] // 2
+    axial = p_amp_2d[:, mid_y]
+    focus_idx = int(round(ROC_MM / dx_mm))
+    log.info("  Axial profile at focus (x=%.0f mm): %.1f kPa", ROC_MM, axial[focus_idx] / 1e3)
+    # Find peak excluding the near-field (x > skull exit)
+    far_field = axial[brain_idx:]
+    ff_peak_idx = np.argmax(far_field)
+    ff_peak_x = (brain_idx + ff_peak_idx) * dx_mm
+    log.info("  Far-field peak (x>%.0f mm): %.1f kPa at x=%.1f mm",
+             brain_start_mm, far_field.max() / 1e3, ff_peak_x)
+
     # Compare against reference if provided
     if ref_path:
         log.info("Loading reference data from %s", ref_path)
