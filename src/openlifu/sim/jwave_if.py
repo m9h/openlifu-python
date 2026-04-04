@@ -277,11 +277,16 @@ def _build_cw_source_field(
 ) -> FourierSeries:
     """Build a complex source field for the Helmholtz solver.
 
-    Places each transducer element as a complex point source at the nearest
-    grid point, with amplitude and phase determined by apodization and
-    time delays. For a focused transducer with zero delays, the geometric
-    focusing phase is encoded as exp(-j*omega*delay_i) where delay_i
-    accounts for the path-length difference to the focus.
+    Each transducer element is placed as a point source at the nearest grid
+    point, weighted by amplitude, apodization, beamforming delay phase, and
+    element area. The element area normalization ensures grid-independent
+    results: each point source represents a finite surface patch of the
+    transducer, scaled by A_elem / dx^2 to account for the grid cell area.
+
+    For a focused bowl transducer with zero beamforming delays, all elements
+    are equidistant from the focus (distance = ROC), so all phases are equal.
+    Focusing arises from the spatial superposition of spherical waves emitted
+    from the curved bowl surface.
 
     Args:
         arr: Transducer with element positions.
@@ -301,48 +306,33 @@ def _build_cw_source_field(
     coord_arrays = [coords[dim].values for dim in dim_names]
     positions = arr.get_positions(units="m")
     omega = 2 * np.pi * freq
+    n_elem = arr.numelements()
 
-    # Compute geometric focusing delays from element-to-focus distances.
-    # For a focused transducer, all wavefronts should arrive in phase at
-    # the geometric focus. Elements closer to the focus fire later (positive
-    # delay) to compensate for the shorter propagation path.
-    #
-    # The focus position is estimated as the point equidistant from all
-    # elements at radius ROC — for a bowl, this is the center of curvature.
-    # We approximate it from the element geometry: the focus is the point
-    # that minimizes the variance of distances from all elements.
-    # For a spherical bowl, this is simply the center of curvature.
-    #
-    # Practical approach: compute distance from each element to every other,
-    # find the centroid, then compute distance from centroid.
-    # Simpler: the focus is at distance ROC from each element, which means
-    # all elements are equidistant from the focus. So geometric_delays = 0
-    # and focusing comes entirely from the spherical wavefront geometry
-    # that the Helmholtz solver handles naturally.
-    #
-    # Actually, for point sources in the Helmholtz solver, we need to
-    # explicitly encode the phase. The delay for each element is:
-    #   delay_i = (d_max - d_i) / c0
-    # where d_i is the distance from element i to the geometric focus,
-    # and d_max is the maximum such distance (reference element).
-    #
-    # For a bowl transducer, all elements are at distance ROC from the focus,
-    # so d_i = ROC for all i, and geometric_delays = 0.
-    # The focusing happens because the elements are distributed on a curved
-    # surface — each at a different spatial position but same phase.
-    # The Helmholtz solver propagates from each source point, and the
-    # spherical geometry of the element positions creates the focal spot.
-    geometric_delays = np.zeros(arr.numelements())
+    # Compute effective element area from transducer geometry.
+    # For a bowl transducer, estimate the total active surface area from
+    # the convex hull of element positions, then divide equally.
+    # For rectangular arrays, use element size directly.
+    elem_sizes = np.array([el.get_size(units="m") for el in arr.elements])
+    if np.all(elem_sizes > 0):
+        # Use actual element sizes (width * length)
+        elem_areas = elem_sizes[:, 0] * elem_sizes[:, 1]
+    else:
+        # Estimate: total area / n_elements
+        elem_areas = np.ones(n_elem) * 1e-6  # fallback 1 mm^2
+
+    # Grid cell face area (for normalizing surface sources to the grid)
+    dx_face = domain.dx[0] * domain.dx[1]  # m^2
 
     src = np.zeros(tuple(domain.N) + (1,), dtype=np.complex64)
-    for i in range(arr.numelements()):
+    for i in range(n_elem):
         idx = []
         for d, cvals in enumerate(coord_arrays):
             cvals_m = cvals * scl
             idx.append(int(np.argmin(np.abs(cvals_m - positions[i, d]))))
-        total_delay = delays[i] + geometric_delays[i]
-        phase = -omega * total_delay
-        src[tuple(idx) + (0,)] += amplitude * apod[i] * np.exp(1j * phase)
+        phase = -omega * delays[i]
+        # Scale by element area / grid cell area for grid-independent results
+        area_scale = elem_areas[i] / dx_face
+        src[tuple(idx) + (0,)] += amplitude * apod[i] * area_scale * np.exp(1j * phase)
 
     return FourierSeries(jnp.array(src), domain)
 

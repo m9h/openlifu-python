@@ -158,6 +158,11 @@ def build_bowl_transducer(freq_hz: float = FREQ_HZ,
     aperture_m = aperture_mm * 1e-3
     half_angle = np.arcsin(aperture_m / (2 * roc_m))
 
+    # Bowl surface area and per-element area
+    a_bowl = 2 * np.pi * roc_m ** 2 * (1 - np.cos(half_angle))
+    a_elem = a_bowl / n_elements
+    elem_side = np.sqrt(a_elem)  # square element with equivalent area
+
     # Fibonacci spiral distribution on spherical cap [0, half_angle]
     elements = []
     golden_ratio = (1 + np.sqrt(5)) / 2
@@ -176,7 +181,7 @@ def build_bowl_transducer(freq_hz: float = FREQ_HZ,
         elements.append(Element(
             index=i,
             position=np.array([x, y, z]),
-            size=np.array([1e-3, 1e-3]),
+            size=np.array([elem_side, elem_side]),
             units="m",
         ))
 
