@@ -38,7 +38,7 @@ _HETEROGENEOUS_MATERIALS = {
                              specific_heat=3600.0, thermal_conductivity=0.50),
 }
 
-# Map integer tissue labels to material keys
+# Map integer tissue labels to material keys (openlifu convention)
 _LABEL_TO_MATERIAL = {
     0: "water",
     1: "scalp",
@@ -47,6 +47,30 @@ _LABEL_TO_MATERIAL = {
     4: "gray_matter",
     5: "white_matter",
 }
+
+# SimNIBS CHARM/headreco uses a different label convention.
+# Remap before passing to HeterogeneousSkullSegmentation(source='labels').
+SIMNIBS_TO_OPENLIFU = {
+    0: 0,  # background → water
+    1: 5,  # WM → white_matter
+    2: 4,  # GM → gray_matter
+    3: 3,  # CSF → csf
+    4: 2,  # bone → skull
+    5: 1,  # skin → scalp
+}
+
+
+def remap_simnibs_labels(labels):
+    """Convert SimNIBS tissue labels to openlifu convention.
+
+    SimNIBS: 0=bg, 1=WM, 2=GM, 3=CSF, 4=bone, 5=skin
+    openlifu: 0=water, 1=scalp, 2=skull, 3=CSF, 4=GM, 5=WM
+    """
+    import numpy as np
+    out = np.zeros_like(labels)
+    for src, dst in SIMNIBS_TO_OPENLIFU.items():
+        out[labels == src] = dst
+    return out
 
 
 @dataclass
