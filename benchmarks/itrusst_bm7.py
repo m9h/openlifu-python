@@ -185,6 +185,52 @@ def run_bm7(dx_mm=2.0, save_png=None):
     }
 
 
+try:
+    import modal
+
+    app = modal.App("itrusst-bm7")
+    bm7_image = (
+        modal.Image.debian_slim(python_version="3.12").apt_install("git")
+        .pip_install(
+            "jax[cuda12]>=0.9.0", "jaxdf>=0.3.0",
+            "jwave @ git+https://github.com/ucl-bug/jwave.git@main",
+            "numpy", "xarray[io]", "matplotlib", "pandas", "scipy", "h5py",
+            "nibabel", "scikit-image", "vtk", "trimesh", "pydicom",
+            "opencv-contrib-python-headless", "crc", "crcmod", "pyserial",
+            "nvidia-ml-py", "OpenEXR", "watchdog", "python-socketio[client]",
+            "onnxruntime",
+        )
+        .add_local_dir("src/openlifu", "/root/pkg/openlifu", copy=True)
+        .add_local_file("benchmarks/itrusst_bm7.py", "/root/pkg/benchmarks/itrusst_bm7.py", copy=True)
+        .add_local_file("benchmarks/itrusst_bm4.py", "/root/pkg/benchmarks/itrusst_bm4.py", copy=True)
+        .add_local_dir("benchmarks/itrusst_data/intercomparison/skull-stl",
+                       "/root/pkg/benchmarks/itrusst_data/intercomparison/skull-stl", copy=True)
+        .env({"PYTHONPATH": "/root/pkg"})
+    )
+
+    @app.function(image=bm7_image, gpu="A100", timeout=3600)
+    def run_bm7_remote(dx_mm: float = 1.0) -> dict:
+        import sys
+        sys.path.insert(0, "/root/pkg")
+        import jax
+        print(f"JAX: {jax.default_backend()}, {jax.devices()}")
+        return run_bm7(dx_mm=dx_mm, save_png="/tmp/bm7.png")
+
+    @app.local_entrypoint()
+    def modal_main(dx_mm: float = 1.0):
+        t0 = time.perf_counter()
+        print(f"Running BM7 realistic skull on A100 (dx={dx_mm} mm)...")
+        r = run_bm7_remote.remote(dx_mm=dx_mm)
+        total = time.perf_counter() - t0
+        print(f"\nBM7 Results:")
+        print(f"  Grid:          {r['grid_shape']}")
+        print(f"  Peak:          {r['peak_kpa']:.1f} kPa")
+        print(f"  Skull voxels:  {r['n_skull_voxels']}")
+        print(f"  Brain voxels:  {r['n_brain_voxels']}")
+        print(f"  Sim time:      {r['sim_time_s']:.1f}s (total {total:.0f}s)")
+except ImportError:
+    pass
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dx", type=float, default=2.0)
