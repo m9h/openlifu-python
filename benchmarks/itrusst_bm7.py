@@ -210,7 +210,7 @@ try:
             "nibabel", "scikit-image", "vtk", "trimesh", "pydicom",
             "opencv-contrib-python-headless", "crc", "crcmod", "pyserial",
             "nvidia-ml-py", "OpenEXR", "watchdog", "python-socketio[client]",
-            "onnxruntime",
+            "onnxruntime", "rtree",
         )
         .add_local_dir("src/openlifu", "/root/pkg/openlifu", copy=True)
         .add_local_file("benchmarks/itrusst_bm7.py", "/root/pkg/benchmarks/itrusst_bm7.py", copy=True)
