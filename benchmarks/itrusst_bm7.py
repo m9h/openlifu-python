@@ -29,12 +29,19 @@ FREQ_HZ = 500e3
 SOURCE_PRESSURE = 60000.0  # Pa (rho*c*v0)
 
 STL_DIR = Path(__file__).parent / "itrusst_data" / "intercomparison" / "skull-stl"
+# Modal mount path fallback
+_MODAL_STL_DIR = Path("/root/pkg/benchmarks/itrusst_data/intercomparison/skull-stl")
 
 
 def load_skull_meshes(stl_dir: str | None = None):
     """Load skull_outer.stl and skull_inner.stl as trimesh objects."""
     import trimesh
-    stl_dir = Path(stl_dir) if stl_dir else STL_DIR
+    if stl_dir:
+        stl_dir = Path(stl_dir)
+    elif STL_DIR.exists():
+        stl_dir = STL_DIR
+    else:
+        stl_dir = _MODAL_STL_DIR
     outer = trimesh.load(stl_dir / "skull_outer.stl")
     inner = trimesh.load(stl_dir / "skull_inner.stl")
     log.info("Loaded outer mesh: %d vertices, %d faces", len(outer.vertices), len(outer.faces))
@@ -45,7 +52,12 @@ def load_skull_meshes(stl_dir: str | None = None):
 def load_affine_transform(stl_dir: str | None = None, target: str = "v1"):
     """Load the affine transform for transducer positioning."""
     import scipy.io as sio
-    stl_dir = Path(stl_dir) if stl_dir else STL_DIR
+    if stl_dir:
+        stl_dir = Path(stl_dir)
+    elif STL_DIR.exists():
+        stl_dir = STL_DIR
+    else:
+        stl_dir = _MODAL_STL_DIR
     mat = sio.loadmat(stl_dir / f"affine_transform_{target}.mat")
     return mat["affine_transform"]
 
