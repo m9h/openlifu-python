@@ -107,20 +107,40 @@ def rasterize_skull(outer_mesh, inner_mesh, dx_mm: float = 1.0,
     # Rasterize using trimesh containment checks
     log.info("Rasterizing skull to %s grid (dx=%.1f mm)...", shape, dx_mm)
 
-    # Build query points (subsample if too large)
-    xx, yy, zz = np.meshgrid(*[v for _, _, v in axes], indexing="ij")
-    points = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
-
-    log.info("  Checking %d points against outer mesh...", len(points))
-    inside_outer = outer_mesh.contains(points)
-    log.info("  Checking %d points against inner mesh...", len(points))
-    inside_inner = inner_mesh.contains(points)
+    # Use trimesh voxelization — much faster than per-point containment
+    pitch = dx_mm
+    log.info("  Voxelizing outer mesh (pitch=%.1f mm)...", pitch)
+    outer_filled = outer_mesh.voxelized(pitch).fill()
+    log.info("  Voxelizing inner mesh...")
+    inner_filled = inner_mesh.voxelized(pitch).fill()
 
     labels = np.zeros(shape, dtype=np.int32)
-    labels_flat = labels.ravel()
-    labels_flat[inside_outer & ~inside_inner] = 2  # skull
-    labels_flat[inside_inner] = 4  # brain
-    labels = labels_flat.reshape(shape)
+
+    def _map_voxels_to_grid(voxel_grid, grid_mins, grid_shape, dx):
+        """Map trimesh VoxelGrid boolean matrix to our coordinate grid."""
+        matrix = voxel_grid.matrix
+        origin = voxel_grid.transform[:3, 3]
+        # Voxel indices where the mesh is filled
+        filled_ijk = np.argwhere(matrix)  # (N, 3)
+        # Convert to world coordinates
+        world = origin + filled_ijk * dx
+        # Convert to our grid indices
+        grid_ijk = np.round((world - grid_mins) / dx).astype(int)
+        # Clip to valid range
+        valid = np.all((grid_ijk >= 0) & (grid_ijk < grid_shape), axis=1)
+        return grid_ijk[valid]
+
+    inner_idx = _map_voxels_to_grid(inner_filled, mins, shape, dx_mm)
+    outer_idx = _map_voxels_to_grid(outer_filled, mins, shape, dx_mm)
+
+    # Brain = inside inner mesh
+    if len(inner_idx) > 0:
+        labels[inner_idx[:, 0], inner_idx[:, 1], inner_idx[:, 2]] = 4
+    # Skull = inside outer but not inside inner
+    if len(outer_idx) > 0:
+        outer_mask = labels[outer_idx[:, 0], outer_idx[:, 1], outer_idx[:, 2]] != 4
+        skull_idx = outer_idx[outer_mask]
+        labels[skull_idx[:, 0], skull_idx[:, 1], skull_idx[:, 2]] = 2
 
     n_water = np.sum(labels == 0)
     n_skull = np.sum(labels == 2)
