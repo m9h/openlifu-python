@@ -491,6 +491,45 @@ steady-state. The comparison validates that both approaches produce
 focal patterns in the same brain region, but the physics are
 fundamentally different (CW amplitude vs.\ transient peak).
 
+\subsection{Birnbaum cohort: 64-subject skull analysis}
+
+We validated the tissue segmentation and pseudo-CT pipeline across the
+full Birnbaum dataset~\citep{Birnbaum2025}: 64 subjects with
+expert-corrected 7-class head segmentations from T1-weighted MRI at
+\SI{1}{\milli\metre} isotropic resolution, spanning four clinical
+sites (Georgetown, UNC, NYU, healthy controls).
+
+<<birnbaum_cohort, results='asis'>>=
+bn <- read.csv(file.path(project_root, "paper", "birnbaum_results.csv"))
+# Aggregate by cohort
+agg <- aggregate(cbind(n_skull, thickness_mean_mm, pseudo_ct_bone_dice) ~ cohort, bn,
+                 function(x) paste0(round(mean(x),1), " +/- ", round(sd(x),1)))
+n_per <- table(bn$cohort)
+agg$n <- as.integer(n_per[agg$cohort])
+agg <- agg[, c("cohort", "n", "n_skull", "thickness_mean_mm", "pseudo_ct_bone_dice")]
+kable(agg, format = "latex", booktabs = TRUE,
+      col.names = c("Cohort", "N", "Skull vol (voxels)", "Thickness (mm)", "Pseudo-CT Dice"),
+      caption = "Birnbaum cohort skull analysis: 64 subjects across 4 clinical sites. Pseudo-CT Dice (mean $\\pm$ SD) confirms the limitation of threshold-based T1-only skull segmentation.",
+      escape = FALSE)
+@
+
+Cross-site variation in skull thickness (\SIrange{22}{27}{\milli\metre})
+and volume demonstrates why per-subject tissue modeling is essential for
+accurate tFUS treatment planning. The mean pseudo-CT bone Dice of
+$0.203 \pm 0.059$ quantifies the gap between simple threshold
+segmentation and expert annotation, motivating learned approaches such
+as nnU-Net~\citep{Isensee2021nnunet} (0.862 Dice reported on this
+dataset in PR~\#436).
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig6_birnbaum_cohort.png}
+  \caption{Birnbaum cohort: skull volume and thickness distributions by
+    clinical site, pseudo-CT bone Dice by cohort, and skull vs.\ brain
+    volume relationship (64 subjects, 4 sites).}
+  \label{fig:birnbaum}
+\end{figure}
+
 % ============================================================================
 \section{Discussion}
 \label{sec:discussion}

@@ -545,6 +545,49 @@ steady-state. The comparison validates that both approaches produce
 focal patterns in the same brain region, but the physics are
 fundamentally different (CW amplitude vs.\ transient peak).
 
+\subsection{Birnbaum cohort: 64-subject skull analysis}
+
+We validated the tissue segmentation and pseudo-CT pipeline across the
+full Birnbaum dataset~\citep{Birnbaum2025}: 64 subjects with
+expert-corrected 7-class head segmentations from T1-weighted MRI at
+\SI{1}{\milli\metre} isotropic resolution, spanning four clinical
+sites (Georgetown, UNC, NYU, healthy controls).
+
+\begin{table}
+
+\caption{\label{tab:birnbaum_cohort}Birnbaum cohort skull analysis: 64 subjects across 4 clinical sites. Pseudo-CT Dice (mean $\pm$ SD) confirms the limitation of threshold-based T1-only skull segmentation.}
+\centering
+\begin{tabular}[t]{lrlll}
+\toprule
+Cohort & N & Skull vol (voxels) & Thickness (mm) & Pseudo-CT Dice\\
+\midrule
+GU & 28 & 1468758.5 +/- 319798.7 & 22.3 +/- 3.2 & 0.2 +/- 0.1\\
+NC & 22 & 2135822.7 +/- 323593 & 27.2 +/- 2.4 & 0.2 +/- 0\\
+NYU & 10 & 1800096.5 +/- 277270.2 & 21.9 +/- 3.4 & 0.2 +/- 0\\
+other & 4 & 1960486 +/- 657518.5 & 25.8 +/- 4.9 & 0.1 +/- 0\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+Cross-site variation in skull thickness (\SIrange{22}{27}{\milli\metre})
+and volume demonstrates why per-subject tissue modeling is essential for
+accurate tFUS treatment planning. The mean pseudo-CT bone Dice of
+$0.203 \pm 0.059$ quantifies the gap between simple threshold
+segmentation and expert annotation, motivating learned approaches such
+as nnU-Net~\citep{Isensee2021nnunet} (0.862 Dice reported on this
+dataset in PR~\#436).
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig6_birnbaum_cohort.png}
+  \caption{Birnbaum cohort: skull volume and thickness distributions by
+    clinical site, pseudo-CT bone Dice by cohort, and skull vs.\ brain
+    volume relationship (64 subjects, 4 sites).}
+  \label{fig:birnbaum}
+\end{figure}
+
 % ============================================================================
 \section{Discussion}
 \label{sec:discussion}
