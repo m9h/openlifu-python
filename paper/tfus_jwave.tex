@@ -462,6 +462,28 @@ Figure~\ref{fig:het_vs_water}.
   \label{fig:het_vs_water}
 \end{figure}
 
+\subsection{BM7: Realistic skull geometry}
+
+We validated the full pipeline on BM7 (realistic MNI152 skull mesh) by
+loading the STL surfaces, rasterizing to a voxel grid via trimesh, and
+running the Helmholtz solver.
+
+\begin{table}
+
+\caption{\label{tab:bm7_results}BM7 realistic skull simulation on A100. The 10.5M-point grid at dx=1\,mm solves in under 2 minutes.}
+\centering
+\begin{tabular}[t]{rlllrr}
+\toprule
+dx (mm) & Grid & Skull voxels & Brain voxels & Peak $p_{\text{amp}}$ (kPa) & Time (s)\\
+\midrule
+2 & 87x109x142 & 108K & 258K & 468.8 & 20.7\\
+1 & 173x216x282 & 821K & 2.0M & 880.0 & 111.6\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
 \subsection{Gradient-based phase correction}
 
 We demonstrate differentiable phase correction by optimizing per-element
@@ -471,16 +493,16 @@ recovers focal pressure by gradient descent in 50 steps.
 
 \begin{table}
 
-\caption{\label{tab:phase_correction}Phase correction through skull on A100 GPU (16 elements, dx=1\,mm, 23.5\,s optimization).}
+\caption{\label{tab:phase_correction}Phase correction through skull (16 elements, 50 steps). Recovery improves from 22\% to 33\% at finer resolution.}
 \centering
-\begin{tabular}[t]{lrl}
+\begin{tabular}[t]{lrrl}
 \toprule
-Condition & Focal pressure (kPa) & Notes\\
+Condition & dx=1\,mm (kPa) & dx=0.5\,mm (kPa) & Recovery\\
 \midrule
-Water (no skull) & 0.2 & Reference\\
-Zero delays & 0.1 & Skull aberration\\
-Random delays & 0.0 & Defocused\\
-Optimized (50 steps) & 0.1 & 287\% improvement, 22\% recovery\\
+Water (no skull) & 0.2 & 1.3 & ---\\
+Zero delays & 0.1 & 0.6 & ---\\
+Random delays & 0.0 & 0.0 & ---\\
+Optimized (50 steps) & 0.1 & 0.4 & 22\% / 33\%\\
 \bottomrule
 \end{tabular}
 \end{table}

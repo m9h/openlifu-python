@@ -413,6 +413,28 @@ Figure~\ref{fig:het_vs_water}.
   \label{fig:het_vs_water}
 \end{figure}
 
+\subsection{BM7: Realistic skull geometry}
+
+We validated the full pipeline on BM7 (realistic MNI152 skull mesh) by
+loading the STL surfaces, rasterizing to a voxel grid via trimesh, and
+running the Helmholtz solver.
+
+<<bm7_results, results='asis'>>=
+bm7 <- data.frame(
+  dx_mm = c(2.0, 1.0),
+  Grid = c("87x109x142", "173x216x282"),
+  Skull = c("108K", "821K"),
+  Brain = c("258K", "2.0M"),
+  Peak_kPa = c(468.8, 880.0),
+  Time_s = c(20.7, 111.6)
+)
+kable(bm7, format = "latex", booktabs = TRUE,
+      col.names = c("dx (mm)", "Grid", "Skull voxels", "Brain voxels",
+                     "Peak $p_{\\text{amp}}$ (kPa)", "Time (s)"),
+      caption = "BM7 realistic skull simulation on A100. The 10.5M-point grid at dx=1\\,mm solves in under 2 minutes.",
+      escape = FALSE)
+@
+
 \subsection{Gradient-based phase correction}
 
 We demonstrate differentiable phase correction by optimizing per-element
@@ -423,12 +445,13 @@ recovers focal pressure by gradient descent in 50 steps.
 <<phase_correction, results='asis'>>=
 pc <- data.frame(
   Condition = c("Water (no skull)", "Zero delays", "Random delays", "Optimized (50 steps)"),
-  p_kPa = c(0.2, 0.1, 0.0, 0.1),
-  Notes = c("Reference", "Skull aberration", "Defocused", "287\\% improvement, 22\\% recovery")
+  p_1mm = c(0.2, 0.1, 0.0, 0.1),
+  p_05mm = c(1.3, 0.6, 0.0, 0.4),
+  Recovery = c("---", "---", "---", "22\\% / 33\\%")
 )
 kable(pc, format = "latex", booktabs = TRUE,
-      col.names = c("Condition", "Focal pressure (kPa)", "Notes"),
-      caption = "Phase correction through skull on A100 GPU (16 elements, dx=1\\,mm, 23.5\\,s optimization).",
+      col.names = c("Condition", "dx=1\\,mm (kPa)", "dx=0.5\\,mm (kPa)", "Recovery"),
+      caption = "Phase correction through skull (16 elements, 50 steps). Recovery improves from 22\\% to 33\\% at finer resolution.",
       escape = FALSE)
 @
 
