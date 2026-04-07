@@ -35,6 +35,38 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
+    'sphinx_autodoc_typehints',
+]
+
+# ---------------------------------------------------------------------------
+# autodoc mock imports — heavy or hardware-specific deps that may not be
+# available in the Sphinx build environment (e.g. Read the Docs).
+# ---------------------------------------------------------------------------
+autodoc_mock_imports = [
+    "jax",
+    "jaxlib",
+    "jaxdf",
+    "jwave",
+    "numpy",
+    "scipy",
+    "nibabel",
+    "vtk",
+    "cv2",
+    "h5py",
+    "trimesh",
+    "pydicom",
+    "skimage",
+    "onnxruntime",
+    "crc",
+    "crcmod",
+    "serial",
+    "watchdog",
+    "socketio",
+    "OpenEXR",
+    "nvidia_smi",
+    "pynvml",
+    "k_wave",
+    "modal",
 ]
 
 source_suffix = [".rst", ".md"]

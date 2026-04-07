@@ -29,7 +29,19 @@ from openlifu.util.units import getunitconversion
 
 
 def _dim_names(coords: xa.Coordinates) -> list[str]:
-    """Extract ordered dimension names from xarray Coordinates."""
+    """Extract the ordered spatial dimension names from xarray Coordinates.
+
+    Parameters
+    ----------
+    coords : xarray.Coordinates
+        Simulation grid coordinates (typically with dimensions ``x``, ``y``,
+        ``z``).
+
+    Returns
+    -------
+    list of str
+        Dimension names in iteration order, e.g. ``['x', 'y', 'z']``.
+    """
     return list(coords.dims)
 
 
@@ -97,16 +109,28 @@ def get_time_axis(
     t_end: float = 0,
     dt: float = 0,
 ) -> TimeAxis:
-    """Create a jwave TimeAxis, either from medium properties or explicit values.
+    """Create a jwave ``TimeAxis`` from medium properties or explicit values.
 
-    Args:
-        medium: jwave Medium (used for automatic dt/t_end calculation).
-        cfl: CFL number for automatic time step calculation.
-        t_end: Explicit end time in seconds. If 0, computed from medium.
-        dt: Explicit time step in seconds. If 0, computed from medium.
+    If *dt* or *t_end* are zero the corresponding value is computed
+    automatically from the medium's sound speed and grid spacing using the
+    CFL condition.
 
-    Returns:
-        jwave TimeAxis
+    Parameters
+    ----------
+    medium : jwave.geometry.Medium
+        Simulation medium (sound speed and grid spacing drive the automatic
+        time-step calculation).
+    cfl : float, optional
+        CFL number for the automatic time step (default 0.3).
+    t_end : float, optional
+        End time in seconds.  ``0`` (default) means compute from medium.
+    dt : float, optional
+        Time step in seconds.  ``0`` (default) means compute from medium.
+
+    Returns
+    -------
+    jwave.geometry.TimeAxis
+        Time axis suitable for ``simulate_wave_propagation``.
     """
     if dt == 0 or t_end == 0:
         return TimeAxis.from_medium(medium, cfl=cfl, t_end=t_end if t_end > 0 else None)

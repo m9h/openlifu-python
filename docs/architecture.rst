@@ -677,6 +677,157 @@ Dependency Graph
      └── geo (spherical coordinates, transforms)
 
 
+Heterogeneous Skull Modeling
+----------------------------
+
+The ``feature/heterogeneous-skull-segmentation`` branch adds a complete
+pipeline for tissue-resolved transcranial focused ultrasound simulation,
+from MRI segmentation through to gradient-based phase correction.
+
+Workflow Overview
+~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   1. Label Source              (SimNIBS, SCI mesh, Birnbaum, pseudo-CT)
+   2. Remap to openlifu         (remap_simnibs_labels, BIRNBAUM_TO_OPENLIFU, etc.)
+   3. Acoustic Property Maps    (HeterogeneousSkullSegmentation._map_params)
+   4. jwave Simulation          (run_simulation / run_cw_simulation)
+   5. Phase Correction          (optimize_delays via jax.grad)
+
+Each stage feeds the next.  The canonical **openlifu label convention** is:
+
+- 0 = water, 1 = scalp, 2 = skull, 3 = CSF, 4 = gray matter, 5 = white matter
+
+All label sources must be remapped to this convention before they reach
+``HeterogeneousSkullSegmentation``.
+
+
+Segmentation: ``HeterogeneousSkullSegmentation``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Extends the base ``SegmentationMethod`` with two modes:
+
+- **labels**: Consumes a pre-computed 3D integer label array (from SimNIBS
+  CHARM, SCI mesh rasterization, or the Birnbaum dataset).  The
+  ``_fit_labels_to_volume()`` method crops or zero-pads to match the
+  simulation grid.
+- **pseudoct**: Thresholds normalised T1w MRI intensity into approximate
+  tissue classes.  Intended for fast previews, not clinical accuracy.
+
+``_map_params()`` overrides the base class to produce spatially-varying
+``xarray.Dataset`` variables (``sound_speed``, ``density``, ``attenuation``,
+``specific_heat``, ``thermal_conductivity``) from the label-to-material
+lookup table.
+
+Material properties are sourced from the IT'IS tissue property database
+and ITRUSST consensus values.
+
+
+Label Remapping
+~~~~~~~~~~~~~~~
+
+Different neuroimaging pipelines use different label conventions:
+
+.. code-block:: text
+
+   SimNIBS:   0=bg, 1=WM, 2=GM, 3=CSF, 4=bone, 5=skin
+   Birnbaum:  0=bg, 1=air, 2=air_cav, 3=WM, 4=GM, 5=CSF, 6=bone, 7=scalp
+   SCI:       (native mesh labels, handled by sci_bridge)
+   openlifu:  0=water, 1=scalp, 2=skull, 3=CSF, 4=GM, 5=WM
+
+The ``remap_simnibs_labels()`` function and ``SIMNIBS_TO_OPENLIFU`` dict
+handle the SimNIBS case.  Each new label source should provide an
+analogous mapping.
+
+
+SCI Bridge: ``sim/sci_bridge.py``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Bridges the SCI head model (University of Utah FEM mesh) into the openlifu
+simulation pipeline.  ``load_sci_for_simulation()`` produces:
+
+- Acoustic property maps (for jwave) via ``HeterogeneousSkullSegmentation``
+- Electrical conductivity maps (for EEG/EIT forward modeling)
+- Both share the same spatial grid and label substrate
+
+Optionally, DTI-derived anisotropic conductivity tensors for white matter
+are computed via the Nernst-Einstein relation (``conductivity_from_dti``).
+
+
+jwave Simulation Backend: ``sim/jwave_if.py``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A drop-in alternative to ``kwave_if`` using JAX-based acoustics:
+
+- ``run_simulation()``: Time-domain pseudospectral solver (pulsed FUS).
+  Returns ``p_max``, ``p_min``, ``intensity`` in the same ``xarray.Dataset``
+  format as k-Wave.
+- ``run_cw_simulation()``: Frequency-domain Helmholtz solver (CW).
+  Returns ``p_amp``, ``p_phase``, ``intensity``.  Memory-efficient: stores
+  one complex 3D field instead of the full time series.
+
+Both functions accept heterogeneous ``xarray.Dataset`` params from
+``HeterogeneousSkullSegmentation`` or homogeneous reference values
+(``ref_values_only=True``).
+
+Helper functions ``get_domain()``, ``get_medium()``, ``get_sources()``, and
+``get_time_axis()`` compose the jwave simulation from openlifu types.
+
+
+Phase Correction: ``sim/phase_correction.py``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Gradient-based transducer delay optimisation using ``jax.grad`` through
+the Helmholtz solver:
+
+- ``compute_focal_gradient()``: Single forward+backward pass returning
+  :math:`\partial |p(\mathbf{x}_\text{target})| / \partial \tau_i` for
+  each element.
+- ``optimize_delays()``: Gradient descent loop with JIT-compiled
+  ``jax.value_and_grad`` steps.  Typical convergence in 30--50 steps at
+  ``lr=1e-7``.
+
+The differentiable source construction (``_build_differentiable_source``)
+uses only JAX primitives so that gradients flow through element amplitudes
+and delay phases.
+
+
+Data Flow Diagram
+~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+   MRI / Mesh / Atlas
+         |
+         v
+   Label Source (SimNIBS, SCI, Birnbaum, pseudo-CT)
+         |
+         v
+   remap_*_labels()  -->  openlifu label array (0-5)
+         |
+         v
+   HeterogeneousSkullSegmentation._map_params()
+         |
+         v
+   xarray.Dataset {sound_speed, density, attenuation, ...}
+         |
+         +----------+-----------+
+         |          |           |
+         v          v           v
+   run_simulation  run_cw     kwave_if.run_simulation
+   (time-domain)  _simulation  (legacy)
+         |          |
+         v          v
+   p_max/p_min   p_amp/p_phase
+         |          |
+         v          v
+   SolutionAnalysis  optimize_delays()
+                        |
+                        v
+                  Corrected delays -> run_cw_simulation -> improved focus
+
+
 Testing
 -------
 

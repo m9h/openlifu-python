@@ -175,3 +175,6 @@ hv_calibration_coeffs.h
 benchmarks/tfuscapes_data/*.npz
 benchmarks/itrusst_data/data/
 benchmarks/birnbaum_data/*.nii
+benchmarks/birnbaum_data/Data/
+benchmarks/birnbaum_data/Metadata.csv
+benchmarks/birnbaum_data/*.zip

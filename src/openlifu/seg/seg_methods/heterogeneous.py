@@ -61,10 +61,32 @@ SIMNIBS_TO_OPENLIFU = {
 
 
 def remap_simnibs_labels(labels):
-    """Convert SimNIBS tissue labels to openlifu convention.
+    """Convert SimNIBS tissue labels to the openlifu convention.
 
-    SimNIBS: 0=bg, 1=WM, 2=GM, 3=CSF, 4=bone, 5=skin
-    openlifu: 0=water, 1=scalp, 2=skull, 3=CSF, 4=GM, 5=WM
+    SimNIBS CHARM / headreco assigns: 0=background, 1=WM, 2=GM, 3=CSF,
+    4=bone, 5=skin.  openlifu expects: 0=water, 1=scalp, 2=skull, 3=CSF,
+    4=gray_matter, 5=white_matter.  This function performs a voxel-wise
+    relabelling so that downstream ``HeterogeneousSkullSegmentation`` can
+    consume the result directly.
+
+    Parameters
+    ----------
+    labels : numpy.ndarray
+        3-D integer array of SimNIBS tissue labels.
+
+    Returns
+    -------
+    numpy.ndarray
+        3-D integer array with labels remapped to the openlifu convention.
+        Shape and dtype match *labels*.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from openlifu.seg.seg_methods.heterogeneous import remap_simnibs_labels
+    >>> simnibs = np.array([[[0, 4, 5]]])  # bg, bone, skin
+    >>> remap_simnibs_labels(simnibs)
+    array([[[0, 2, 1]]])
     """
     import numpy as np
     out = np.zeros_like(labels)
@@ -133,7 +155,22 @@ class HeterogeneousSkullSegmentation(SegmentationMethod):
             )
 
     def _fit_labels_to_volume(self, volume: xa.DataArray) -> np.ndarray:
-        """Resize/crop label_array to match volume dimensions."""
+        """Resize or crop ``self.label_array`` to match volume dimensions.
+
+        When the stored label array does not exactly match the simulation
+        grid, this method crops overlapping regions or zero-pads missing
+        regions so that the result has the same shape as *volume*.
+
+        Parameters
+        ----------
+        volume : xarray.DataArray
+            Reference volume whose ``.shape`` defines the target grid.
+
+        Returns
+        -------
+        numpy.ndarray
+            Integer label array with shape ``volume.shape``.
+        """
         labels = np.asarray(self.label_array, dtype=int)
         vol_shape = volume.shape
 
@@ -150,16 +187,36 @@ class HeterogeneousSkullSegmentation(SegmentationMethod):
         return result
 
     def _segment_pseudoct(self, volume: xa.DataArray) -> xa.DataArray:
-        """
-        Approximate tissue segmentation from T1w intensity.
+        """Approximate tissue segmentation from normalised T1w MRI intensity.
 
-        Simple threshold-based classification:
-        - Very low intensity (< 0.15): background/air (0)
-        - Low intensity (< 0.3): skull (2)
-        - Medium-low (< 0.45): CSF (3)
-        - Medium (< 0.7): gray matter (4)
-        - High: white matter (5)
-        - Outer rim: scalp (1)
+        Applies a simple threshold-based classification to produce integer
+        tissue labels.  The thresholds assume the input volume has been
+        normalised to [0, 1].  This is intended as a fast approximation
+        for treatment-planning previews; for research-quality results use
+        pre-computed labels from SimNIBS CHARM or a dedicated pseudo-CT
+        model (e.g. Plymouth).
+
+        Threshold scheme (on normalised intensity):
+
+        ============  =================  =========
+        Range         Tissue             Label
+        ============  =================  =========
+        < 0.15        background / air   0
+        0.15 -- 0.30  skull              2
+        0.30 -- 0.45  CSF                3
+        0.45 -- 0.70  gray matter        4
+        >= 0.70       white matter       5
+        ============  =================  =========
+
+        Parameters
+        ----------
+        volume : xarray.DataArray
+            Normalised T1w MRI volume (values in [0, 1]).
+
+        Returns
+        -------
+        xarray.DataArray
+            Integer tissue labels with the same coordinates as *volume*.
         """
         data = volume.data
         labels = np.full(data.shape, 4, dtype=int)  # default GM

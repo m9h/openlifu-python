@@ -9,6 +9,14 @@ Welcome to openlifu's documentation!
    architecture
    api
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorials:
+
+   tutorials/heterogeneous_skull
+   tutorials/phase_correction
+   tutorials/jwave_backend
+
 Indices and tables
 ==================
 

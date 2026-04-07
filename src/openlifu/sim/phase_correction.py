@@ -28,7 +28,31 @@ def _build_differentiable_source(
     omega: float,
     domain: Domain,
 ) -> FourierSeries:
-    """Build complex source field from JAX arrays (differentiable)."""
+    """Build a complex CW source field from JAX arrays (fully differentiable).
+
+    Each transducer element is placed at its nearest grid index as a complex
+    point source whose phase encodes the beamforming delay.  Because the
+    construction uses only JAX primitives, ``jax.grad`` can differentiate
+    through it with respect to *delays* and *amplitudes*.
+
+    Parameters
+    ----------
+    positions_idx : list of tuple
+        Grid indices ``(ix, iy, iz)`` for each transducer element.
+    amplitudes : jnp.ndarray
+        Per-element amplitude weights (shape ``(n_elements,)``).
+    delays : jnp.ndarray
+        Per-element time delays in seconds (shape ``(n_elements,)``).
+    omega : float
+        Angular frequency :math:`2\\pi f` in rad/s.
+    domain : jwave.geometry.Domain
+        Simulation domain (grid size and spacing).
+
+    Returns
+    -------
+    jaxdf.discretization.FourierSeries
+        Complex source field on the simulation grid.
+    """
     src = jnp.zeros(tuple(domain.N) + (1,), dtype=jnp.complex64)
     for i, idx in enumerate(positions_idx):
         phase = -omega * delays[i]
@@ -38,7 +62,23 @@ def _build_differentiable_source(
 
 
 def _element_indices(arr: xdc.Transducer, coords: xa.Coordinates, scl: float):
-    """Map element positions to grid indices."""
+    """Map transducer element physical positions to nearest grid indices.
+
+    Parameters
+    ----------
+    arr : openlifu.xdc.Transducer
+        Transducer with element positions in metres.
+    coords : xarray.Coordinates
+        Simulation grid coordinates (must contain dimension names
+        matching ``_dim_names``).
+    scl : float
+        Scale factor from the coordinate units to metres (e.g. 1e-3 for mm).
+
+    Returns
+    -------
+    list of tuple
+        One ``(ix, iy, iz)`` index tuple per element.
+    """
     dim_names = _dim_names(coords)
     coord_arrays = [coords[dim].values for dim in dim_names]
     positions = arr.get_positions(units="m")
@@ -61,7 +101,36 @@ def compute_focal_gradient(
     amplitude: float = 60000.0,
     pml_size: int = 10,
 ) -> np.ndarray:
-    """Compute gradient of focal pressure w.r.t. delays."""
+    """Compute the gradient of focal pressure amplitude with respect to delays.
+
+    Evaluates a single forward + backward pass through jwave's Helmholtz
+    solver via ``jax.grad``.  The returned gradient vector indicates how a
+    small change in each element's delay would alter the (negative) pressure
+    amplitude at the target, enabling gradient-descent optimisation.
+
+    Parameters
+    ----------
+    arr : openlifu.xdc.Transducer
+        Transducer array.
+    params : xarray.Dataset
+        Acoustic property maps (``sound_speed``, ``density``,
+        ``attenuation``).
+    target_idx : tuple of int
+        Grid index ``(ix, iy, iz)`` of the focal target.
+    freq : float
+        CW frequency in Hz.
+    delays : numpy.ndarray
+        Current per-element delays in seconds, shape ``(n_elements,)``.
+    amplitude : float, optional
+        Source amplitude in Pa (default 60 000).
+    pml_size : int, optional
+        PML absorbing boundary thickness in grid points (default 10).
+
+    Returns
+    -------
+    numpy.ndarray
+        Gradient vector of shape ``(n_elements,)`` in units of Pa/s.
+    """
     domain, scl = get_domain(params.coords)
     medium = get_medium(params, domain, ref_values_only=True, pml_size=pml_size)
     omega = 2 * np.pi * freq
@@ -94,12 +163,39 @@ def optimize_delays(
     amplitude: float = 60000.0,
     pml_size: int = 10,
 ) -> np.ndarray:
-    """Optimize per-element delays to maximize pressure at target.
+    """Optimise per-element delays to maximise pressure at a target point.
 
-    Uses jax.grad through the Helmholtz solver for gradient descent.
+    Performs gradient descent on the negative focal-pressure objective by
+    back-propagating through jwave's Helmholtz solver via ``jax.value_and_grad``.
+    Each step is JIT-compiled for GPU acceleration.
 
-    Returns:
-        Optimized delays in seconds.
+    Parameters
+    ----------
+    arr : openlifu.xdc.Transducer
+        Transducer array.
+    params : xarray.Dataset
+        Acoustic property maps (``sound_speed``, ``density``,
+        ``attenuation``).
+    target_idx : tuple of int
+        Grid index ``(ix, iy, iz)`` of the focal target.
+    freq : float
+        CW frequency in Hz.
+    init_delays : numpy.ndarray or None, optional
+        Initial per-element delays in seconds.  If ``None``, starts from
+        zero delays.
+    n_steps : int, optional
+        Number of gradient-descent iterations (default 50).
+    lr : float, optional
+        Learning rate (default 1e-7).
+    amplitude : float, optional
+        Source amplitude in Pa (default 60 000).
+    pml_size : int, optional
+        PML absorbing boundary thickness in grid points (default 10).
+
+    Returns
+    -------
+    numpy.ndarray
+        Optimised delay vector in seconds, shape ``(n_elements,)``.
     """
     domain, scl = get_domain(params.coords)
     medium = get_medium(params, domain, ref_values_only=True, pml_size=pml_size)
