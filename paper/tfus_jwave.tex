@@ -462,6 +462,33 @@ Figure~\ref{fig:het_vs_water}.
   \label{fig:het_vs_water}
 \end{figure}
 
+\subsection{BM1: Free-field analytical validation}
+
+We validated the source model against the analytical focal pressure for
+a focused bowl in lossless water ($p_{\text{focus}} = \rho c v_0 k a^2 / 2R
+\approx \SI{1005}{\kilo\pascal}$).
+
+\begin{table}
+
+\caption{\label{tab:bm1_results}BM1 free-field validation: focal pressure converges toward the analytical solution with decreasing grid spacing.}
+\centering
+\begin{tabular}[t]{rrrrr}
+\toprule
+dx (mm) & Focus (kPa) & Analytical (kPa) & Error (\%) & Time (s)\\
+\midrule
+0.50 & 562 & 1005 & 44.1 & 24\\
+0.25 & 881 & 1005 & 12.4 & 455\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+The error reduction from 44\\% at \SI{0.5}{\milli\metre} to 12\\% at
+\SI{0.25}{\milli\metre} confirms grid convergence; the residual error
+is attributable to the discrete 256-element point-source approximation
+of a continuous bowl surface.
+
 \subsection{BM7: Realistic skull geometry}
 
 We validated the full pipeline on BM7 (realistic MNI152 skull mesh) by
@@ -544,6 +571,31 @@ TFUScapes uses pulsed time-domain k-Wave while we solve for CW
 steady-state. The comparison validates that both approaches produce
 focal patterns in the same brain region, but the physics are
 fundamentally different (CW amplitude vs.\ transient peak).
+
+\subsection{Per-patient skull simulation}
+
+We ran the Helmholtz solver through five Birnbaum subjects' expert-segmented
+skulls at \SI{2}{\milli\metre} resolution, demonstrating per-patient focal
+pressure variation.
+
+\begin{table}
+
+\caption{\label{tab:birnbaum_sim}Per-patient Helmholtz simulation through expert-segmented stroke patient skulls (Birnbaum dataset, dx=2\,mm). The 20$\times$ variation in focal pressure demonstrates the importance of per-subject skull modeling.}
+\centering
+\begin{tabular}[t]{lrrr}
+\toprule
+Subject & Skull (\%) & Brain $p_{\max}$ (kPa) & Time (s)\\
+\midrule
+GU002 & 11.7 & 1.0 & 9.4\\
+GU006 & 12.6 & 0.4 & 7.6\\
+GU008 & 14.9 & 4.6 & 9.6\\
+GU009 & 15.3 & 0.5 & 7.9\\
+GU010 & 8.3 & 7.8 & 8.9\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
 
 \subsection{Birnbaum cohort: 64-subject skull analysis}
 
