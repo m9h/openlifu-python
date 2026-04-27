@@ -106,7 +106,7 @@ try:
         modal.Image.debian_slim(python_version="3.12").apt_install("git")
         .pip_install(
             "jax[cuda12]>=0.9.0", "jaxdf>=0.3.0",
-            "jwave @ git+https://github.com/ucl-bug/jwave.git@main",
+            "jwave @ git+https://github.com/ucl-bug/jwave.git@d1918f4e6adbf3822108e0af8034063efed1d581",
             "numpy", "xarray[io]", "matplotlib", "pandas", "scipy", "h5py",
             "nibabel", "scikit-image", "vtk", "trimesh", "pydicom",
             "opencv-contrib-python-headless", "crc", "crcmod", "pyserial",
