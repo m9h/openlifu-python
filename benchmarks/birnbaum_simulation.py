@@ -100,7 +100,6 @@ def simulate_subject(label_path: str, subject_id: str, dx_mm: float = 2.0) -> di
 
 try:
     import modal
-    import pathlib
 
     app = modal.App("birnbaum-sim")
     img = (
@@ -120,14 +119,8 @@ try:
         .env({"PYTHONPATH": "/root/pkg"})
     )
 
-    kaggle_secret = modal.Secret.from_dict({
-        "KAGGLE_API_TOKEN": pathlib.Path(
-            "~/.kaggle/access_token"
-        ).expanduser().read_text().strip(),
-    })
-
     @app.function(image=img, gpu="A100", timeout=7200, memory=32768,
-                  secrets=[kaggle_secret])
+                  secrets=[modal.Secret.from_name("kaggle-token")])
     def run_subjects(n_subjects: int = 5, dx_mm: float = 2.0) -> list[dict]:
         import sys, subprocess, glob
         sys.path.insert(0, "/root/pkg")
