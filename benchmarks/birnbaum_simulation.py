@@ -37,10 +37,16 @@ def simulate_subject(label_path: str, subject_id: str, dx_mm: float = 2.0,
     for src, dst in BIRNBAUM_TO_OPENLIFU.items():
         labels[raw == src] = dst
 
-    # Downsample if needed
+    # Birnbaum data is native 1mm isotropic. Resample by nearest-neighbor
+    # to the target dx so the physical domain extent is constant across
+    # resolutions (this is what makes a real grid-convergence study).
     if dx_mm > 1.0:
         step = int(dx_mm)
         labels = labels[::step, ::step, ::step]
+    elif dx_mm < 1.0:
+        import scipy.ndimage as _ndi
+        factor = 1.0 / dx_mm
+        labels = _ndi.zoom(labels, factor, order=0).astype(np.int32)
 
     shape = labels.shape
     coords = xa.Coordinates({
