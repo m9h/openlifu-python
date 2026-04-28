@@ -100,7 +100,9 @@ def simulate_subject(label_path: str, subject_id: str, dx_mm: float = 2.0) -> di
 
 try:
     import modal
+    import os as _os
 
+    _MODAL_GPU = _os.environ.get("MODAL_GPU", "A100")
     app = modal.App("birnbaum-sim")
     img = (
         modal.Image.debian_slim(python_version="3.12").apt_install("git")
@@ -119,7 +121,7 @@ try:
         .env({"PYTHONPATH": "/root/pkg"})
     )
 
-    @app.function(image=img, gpu="A100", timeout=7200, memory=32768,
+    @app.function(image=img, gpu=_MODAL_GPU, timeout=7200, memory=32768,
                   secrets=[modal.Secret.from_name("kaggle-token")])
     def run_subjects(n_subjects: int = 5, dx_mm: float = 2.0,
                      subject_ids: str = "") -> list[dict]:
@@ -167,15 +169,14 @@ try:
 
     @app.local_entrypoint()
     def main(n_subjects: int = 5, dx_mm: float = 2.0,
-             subject_ids: str = "", out: str = "", gpu: str = "A100"):
+             subject_ids: str = "", out: str = ""):
         import json, pathlib
         t0 = time.perf_counter()
         scope = subject_ids if subject_ids else f"first {n_subjects}"
         print(f"Running Birnbaum per-patient simulation "
-              f"({scope}, dx={dx_mm}mm, gpu={gpu})...")
-        fn = run_subjects.with_options(gpu=gpu) if gpu != "A100" else run_subjects
-        results = fn.remote(n_subjects=n_subjects, dx_mm=dx_mm,
-                            subject_ids=subject_ids)
+              f"({scope}, dx={dx_mm}mm, gpu={_MODAL_GPU})...")
+        results = run_subjects.remote(n_subjects=n_subjects, dx_mm=dx_mm,
+                                       subject_ids=subject_ids)
         total = time.perf_counter() - t0
         print(f"\nCompleted {len(results)} subjects in {total:.0f}s")
         for r in results:
