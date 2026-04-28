@@ -1,0 +1,27 @@
+{
+  "config": {
+    "dx_mm": 1.0,
+    "freq_hz": 500000.0,
+    "source_pa": 60000.0,
+    "subject_ids": "GU012",
+    "n_subjects": 5,
+    "wall_time_s": 124.63973789906595
+  },
+  "results": [
+    {
+      "subject": "GU012",
+      "shape": [
+        176,
+        250,
+        250
+      ],
+      "dx_mm": 1.0,
+      "n_skull": 1577024,
+      "n_brain": 914421,
+      "p_amp_max_pa": 410992.90625,
+      "p_brain_max_pa": 59543.61328125,
+      "p_brain_mean_pa": 4908.6591796875,
+      "sim_time_s": 58.463694804
+    }
+  ]
+}

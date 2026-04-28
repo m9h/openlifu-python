@@ -1,0 +1,331 @@
+{
+  "config": {
+    "dx_mm": 2.0,
+    "freq_hz": 500000.0,
+    "source_pa": 60000,
+    "n_subjects": 64,
+    "note": "partial: brain_max + sim_time only, recovered from log"
+  },
+  "results": [
+    {
+      "subject": "GU002",
+      "p_brain_max_kpa": 9.4,
+      "sim_time_s": 16.1
+    },
+    {
+      "subject": "GU006",
+      "p_brain_max_kpa": 12.7,
+      "sim_time_s": 12.5
+    },
+    {
+      "subject": "GU008",
+      "p_brain_max_kpa": 6.0,
+      "sim_time_s": 14.2
+    },
+    {
+      "subject": "GU009",
+      "p_brain_max_kpa": 8.8,
+      "sim_time_s": 13.3
+    },
+    {
+      "subject": "GU010",
+      "p_brain_max_kpa": 8.4,
+      "sim_time_s": 15.9
+    },
+    {
+      "subject": "GU011",
+      "p_brain_max_kpa": 9.5,
+      "sim_time_s": 11.9
+    },
+    {
+      "subject": "GU012",
+      "p_brain_max_kpa": 30.5,
+      "sim_time_s": 12.0
+    },
+    {
+      "subject": "GU015",
+      "p_brain_max_kpa": 10.7,
+      "sim_time_s": 14.5
+    },
+    {
+      "subject": "GU016",
+      "p_brain_max_kpa": 9.8,
+      "sim_time_s": 14.0
+    },
+    {
+      "subject": "GU017",
+      "p_brain_max_kpa": 9.3,
+      "sim_time_s": 14.3
+    },
+    {
+      "subject": "GU018",
+      "p_brain_max_kpa": 15.6,
+      "sim_time_s": 12.8
+    },
+    {
+      "subject": "GU019",
+      "p_brain_max_kpa": 8.0,
+      "sim_time_s": 14.5
+    },
+    {
+      "subject": "GU020",
+      "p_brain_max_kpa": 7.5,
+      "sim_time_s": 14.6
+    },
+    {
+      "subject": "GU021",
+      "p_brain_max_kpa": 9.3,
+      "sim_time_s": 14.1
+    },
+    {
+      "subject": "GU024",
+      "p_brain_max_kpa": 10.4,
+      "sim_time_s": 14.1
+    },
+    {
+      "subject": "GU025",
+      "p_brain_max_kpa": 13.9,
+      "sim_time_s": 14.0
+    },
+    {
+      "subject": "GU026",
+      "p_brain_max_kpa": 7.6,
+      "sim_time_s": 16.9
+    },
+    {
+      "subject": "GU027",
+      "p_brain_max_kpa": 5.3,
+      "sim_time_s": 16.6
+    },
+    {
+      "subject": "GU029",
+      "p_brain_max_kpa": 7.3,
+      "sim_time_s": 17.7
+    },
+    {
+      "subject": "GU030",
+      "p_brain_max_kpa": 6.3,
+      "sim_time_s": 17.2
+    },
+    {
+      "subject": "GU032",
+      "p_brain_max_kpa": 8.1,
+      "sim_time_s": 18.7
+    },
+    {
+      "subject": "GU033",
+      "p_brain_max_kpa": 9.7,
+      "sim_time_s": 16.5
+    },
+    {
+      "subject": "GU035",
+      "p_brain_max_kpa": 7.2,
+      "sim_time_s": 14.6
+    },
+    {
+      "subject": "GU036",
+      "p_brain_max_kpa": 8.5,
+      "sim_time_s": 17.2
+    },
+    {
+      "subject": "GU038",
+      "p_brain_max_kpa": 8.3,
+      "sim_time_s": 14.5
+    },
+    {
+      "subject": "GU039",
+      "p_brain_max_kpa": 14.9,
+      "sim_time_s": 14.8
+    },
+    {
+      "subject": "GU040",
+      "p_brain_max_kpa": 5.9,
+      "sim_time_s": 15.5
+    },
+    {
+      "subject": "GU041",
+      "p_brain_max_kpa": 9.5,
+      "sim_time_s": 14.5
+    },
+    {
+      "subject": "NC004",
+      "p_brain_max_kpa": 18.0,
+      "sim_time_s": 16.8
+    },
+    {
+      "subject": "NC008",
+      "p_brain_max_kpa": 16.6,
+      "sim_time_s": 16.8
+    },
+    {
+      "subject": "NC010",
+      "p_brain_max_kpa": 21.2,
+      "sim_time_s": 12.3
+    },
+    {
+      "subject": "NC011",
+      "p_brain_max_kpa": 9.7,
+      "sim_time_s": 11.5
+    },
+    {
+      "subject": "NC012",
+      "p_brain_max_kpa": 11.3,
+      "sim_time_s": 11.6
+    },
+    {
+      "subject": "NC013",
+      "p_brain_max_kpa": 10.9,
+      "sim_time_s": 11.2
+    },
+    {
+      "subject": "NC014",
+      "p_brain_max_kpa": 7.8,
+      "sim_time_s": 10.9
+    },
+    {
+      "subject": "NC015",
+      "p_brain_max_kpa": 9.4,
+      "sim_time_s": 11.3
+    },
+    {
+      "subject": "NC016",
+      "p_brain_max_kpa": 7.7,
+      "sim_time_s": 14.5
+    },
+    {
+      "subject": "NC017",
+      "p_brain_max_kpa": 14.9,
+      "sim_time_s": 14.7
+    },
+    {
+      "subject": "NC018",
+      "p_brain_max_kpa": 5.5,
+      "sim_time_s": 14.5
+    },
+    {
+      "subject": "NC019",
+      "p_brain_max_kpa": 8.2,
+      "sim_time_s": 24.6
+    },
+    {
+      "subject": "NC020",
+      "p_brain_max_kpa": 15.3,
+      "sim_time_s": 20.5
+    },
+    {
+      "subject": "NC021",
+      "p_brain_max_kpa": 9.8,
+      "sim_time_s": 14.4
+    },
+    {
+      "subject": "NC022",
+      "p_brain_max_kpa": 9.0,
+      "sim_time_s": 14.8
+    },
+    {
+      "subject": "NC023",
+      "p_brain_max_kpa": 6.2,
+      "sim_time_s": 15.7
+    },
+    {
+      "subject": "NC024",
+      "p_brain_max_kpa": 10.1,
+      "sim_time_s": 15.7
+    },
+    {
+      "subject": "NC025",
+      "p_brain_max_kpa": 7.7,
+      "sim_time_s": 16.3
+    },
+    {
+      "subject": "NC027",
+      "p_brain_max_kpa": 13.4,
+      "sim_time_s": 15.3
+    },
+    {
+      "subject": "NC029",
+      "p_brain_max_kpa": 9.7,
+      "sim_time_s": 16.4
+    },
+    {
+      "subject": "NC031",
+      "p_brain_max_kpa": 7.2,
+      "sim_time_s": 16.0
+    },
+    {
+      "subject": "NC033",
+      "p_brain_max_kpa": 5.2,
+      "sim_time_s": 15.6
+    },
+    {
+      "subject": "NYU002",
+      "p_brain_max_kpa": 12.8,
+      "sim_time_s": 12.5
+    },
+    {
+      "subject": "NYU003",
+      "p_brain_max_kpa": 9.7,
+      "sim_time_s": 12.5
+    },
+    {
+      "subject": "NYU004",
+      "p_brain_max_kpa": 8.2,
+      "sim_time_s": 13.0
+    },
+    {
+      "subject": "NYU005",
+      "p_brain_max_kpa": 8.7,
+      "sim_time_s": 13.5
+    },
+    {
+      "subject": "NYU006",
+      "p_brain_max_kpa": 7.4,
+      "sim_time_s": 13.6
+    },
+    {
+      "subject": "NYU007",
+      "p_brain_max_kpa": 10.3,
+      "sim_time_s": 12.6
+    },
+    {
+      "subject": "NYU008",
+      "p_brain_max_kpa": 6.0,
+      "sim_time_s": 11.8
+    },
+    {
+      "subject": "NYU009",
+      "p_brain_max_kpa": 12.8,
+      "sim_time_s": 14.1
+    },
+    {
+      "subject": "NYU010",
+      "p_brain_max_kpa": 7.7,
+      "sim_time_s": 12.7
+    },
+    {
+      "subject": "NYU011",
+      "p_brain_max_kpa": 6.3,
+      "sim_time_s": 11.9
+    },
+    {
+      "subject": "subj1",
+      "p_brain_max_kpa": 5.5,
+      "sim_time_s": 14.4
+    },
+    {
+      "subject": "subj2",
+      "p_brain_max_kpa": 20.7,
+      "sim_time_s": 19.0
+    },
+    {
+      "subject": "subj3",
+      "p_brain_max_kpa": 10.3,
+      "sim_time_s": 17.7
+    },
+    {
+      "subject": "subj4",
+      "p_brain_max_kpa": 11.6,
+      "sim_time_s": 15.1
+    }
+  ]
+}

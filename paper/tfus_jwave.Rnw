@@ -518,20 +518,31 @@ fundamentally different (CW amplitude vs.\ transient peak).
 
 \subsection{Per-patient skull simulation}
 
-We ran the Helmholtz solver through five Birnbaum subjects' expert-segmented
-skulls at \SI{2}{\milli\metre} resolution, demonstrating per-patient focal
-pressure variation.
+We ran the Helmholtz solver through all 64 Birnbaum subjects' expert-segmented
+skulls at \SI{2}{\milli\metre} resolution. Per-patient focal pressure
+varied by a factor of 5.9$\times$ across the cohort (Table~\ref{tab:birnbaum_sim}).
 
 <<birnbaum_sim, results='asis'>>=
-bsim <- data.frame(
-  Subject = c("GU002", "GU006", "GU008", "GU009", "GU010"),
-  Skull_pct = c(11.7, 12.6, 14.9, 15.3, 8.3),
-  Brain_pmax_kPa = c(1.0, 0.4, 4.6, 0.5, 7.8),
-  Time_s = c(9.4, 7.6, 9.6, 7.9, 8.9)
-)
-kable(bsim, format = "latex", booktabs = TRUE,
-      col.names = c("Subject", "Skull (\\%)", "Brain $p_{\\max}$ (kPa)", "Time (s)"),
-      caption = "Per-patient Helmholtz simulation through expert-segmented stroke patient skulls (Birnbaum dataset, dx=2\\,mm). The 20$\\times$ variation in focal pressure demonstrates the importance of per-subject skull modeling.",
+suppressPackageStartupMessages(library(jsonlite))
+bsim_path <- file.path(project_root, "results", "birnbaum_64subjects",
+                       "dx2mm_partial.json")
+bsim_json <- fromJSON(bsim_path)
+bsim <- bsim_json$results
+qs <- quantile(bsim$p_brain_max_kpa, c(0, 0.25, 0.5, 0.75, 1.0))
+ord <- order(bsim$p_brain_max_kpa)
+pick <- bsim[ord[c(1,
+                   which.min(abs(bsim$p_brain_max_kpa[ord] - qs[2])),
+                   which.min(abs(bsim$p_brain_max_kpa[ord] - qs[3])),
+                   which.min(abs(bsim$p_brain_max_kpa[ord] - qs[4])),
+                   length(ord))], ]
+pick$Quantile <- c("min", "p25", "median", "p75", "max")
+pick <- pick[, c("Quantile", "subject", "p_brain_max_kpa", "sim_time_s")]
+kable(pick, format = "latex", booktabs = TRUE, row.names = FALSE,
+      col.names = c("Quantile", "Subject", "Brain $p_{\\max}$ (kPa)", "Time (s)"),
+      digits = c(0, 0, 1, 1),
+      caption = sprintf("Per-patient Helmholtz simulation across all %d Birnbaum subjects (dx=2\\,mm, 500\\,kHz, 60\\,kPa source). Representative quantiles shown; full distribution: mean %.1f\\,kPa, range %.1f--%.1f\\,kPa, IQR %.1f--%.1f\\,kPa.",
+                        nrow(bsim), mean(bsim$p_brain_max_kpa),
+                        qs[1], qs[5], qs[2], qs[4]),
       escape = FALSE)
 @
 
