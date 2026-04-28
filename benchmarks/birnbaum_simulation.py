@@ -22,7 +22,8 @@ FREQ_HZ = 500e3
 SOURCE_PRESSURE = 60000.0
 
 
-def simulate_subject(label_path: str, subject_id: str, dx_mm: float = 2.0) -> dict:
+def simulate_subject(label_path: str, subject_id: str, dx_mm: float = 2.0,
+                     tol: float = 1e-3, maxiter: int = 300) -> dict:
     """Run CW simulation through one Birnbaum subject's skull."""
     import nibabel as nib
     import xarray as xa
@@ -75,7 +76,7 @@ def simulate_subject(label_path: str, subject_id: str, dx_mm: float = 2.0) -> di
     t0 = time.perf_counter()
     ds, _ = run_cw_simulation(
         arr=tx, params=params, freq=FREQ_HZ, amplitude=SOURCE_PRESSURE,
-        pml_size=8, tol=1e-3, maxiter=300,
+        pml_size=8, tol=tol, maxiter=maxiter,
     )
     sim_time = time.perf_counter() - t0
 
@@ -124,7 +125,8 @@ try:
     @app.function(image=img, gpu=_MODAL_GPU, timeout=7200, memory=32768,
                   secrets=[modal.Secret.from_name("kaggle-token")])
     def run_subjects(n_subjects: int = 5, dx_mm: float = 2.0,
-                     subject_ids: str = "") -> list[dict]:
+                     subject_ids: str = "",
+                     tol: float = 1e-3, maxiter: int = 300) -> list[dict]:
         import sys, subprocess, glob
         sys.path.insert(0, "/root/pkg")
         import jax
@@ -151,7 +153,8 @@ try:
             sid = os.path.basename(lf).split("_label_deface")[0]
             print(f"\n[{i+1}/{len(label_files)}] Simulating {sid}...")
             try:
-                r = simulate_subject(lf, sid, dx_mm=dx_mm)
+                r = simulate_subject(lf, sid, dx_mm=dx_mm,
+                                     tol=tol, maxiter=maxiter)
                 results.append(r)
                 print(f"  p_brain_max={r['p_brain_max_pa']/1e3:.1f} kPa, "
                       f"sim_time={r['sim_time_s']:.1f}s")
@@ -169,14 +172,16 @@ try:
 
     @app.local_entrypoint()
     def main(n_subjects: int = 5, dx_mm: float = 2.0,
-             subject_ids: str = "", out: str = ""):
+             subject_ids: str = "", out: str = "",
+             tol: float = 1e-3, maxiter: int = 300):
         import json, pathlib
         t0 = time.perf_counter()
         scope = subject_ids if subject_ids else f"first {n_subjects}"
         print(f"Running Birnbaum per-patient simulation "
-              f"({scope}, dx={dx_mm}mm, gpu={_MODAL_GPU})...")
+              f"({scope}, dx={dx_mm}mm, tol={tol}, maxiter={maxiter}, gpu={_MODAL_GPU})...")
         results = run_subjects.remote(n_subjects=n_subjects, dx_mm=dx_mm,
-                                       subject_ids=subject_ids)
+                                       subject_ids=subject_ids,
+                                       tol=tol, maxiter=maxiter)
         total = time.perf_counter() - t0
         print(f"\nCompleted {len(results)} subjects in {total:.0f}s")
         for r in results:
@@ -185,13 +190,15 @@ try:
         if not out:
             tag = (subject_ids.replace(",", "_") if subject_ids
                    else f"n{n_subjects}")
-            out = f"results/birnbaum_{tag}_dx{dx_mm}mm.json"
+            tol_tag = "" if (tol == 1e-3 and maxiter == 300) else f"_tol{tol:g}_iter{maxiter}"
+            out = f"results/birnbaum_{tag}_dx{dx_mm}mm{tol_tag}.json"
         path = pathlib.Path(out)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(
             {"config": {"dx_mm": dx_mm, "freq_hz": FREQ_HZ,
                         "source_pa": SOURCE_PRESSURE, "subject_ids": subject_ids,
-                        "n_subjects": n_subjects, "wall_time_s": total},
+                        "n_subjects": n_subjects, "tol": tol, "maxiter": maxiter,
+                        "wall_time_s": total},
              "results": results}, indent=2))
         print(f"\nSaved full results to {path}")
 
