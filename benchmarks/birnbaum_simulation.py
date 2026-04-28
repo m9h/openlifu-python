@@ -121,7 +121,8 @@ try:
 
     @app.function(image=img, gpu="A100", timeout=7200, memory=32768,
                   secrets=[modal.Secret.from_name("kaggle-token")])
-    def run_subjects(n_subjects: int = 5, dx_mm: float = 2.0) -> list[dict]:
+    def run_subjects(n_subjects: int = 5, dx_mm: float = 2.0,
+                     subject_ids: str = "") -> list[dict]:
         import sys, subprocess, glob
         sys.path.insert(0, "/root/pkg")
         import jax
@@ -133,7 +134,14 @@ try:
                         "-p", "/tmp/birnbaum/", "--unzip"], check=True, capture_output=True)
 
         label_dir = "/tmp/birnbaum/Data/Anonymized_Subjects/Full-Head Segmentation"
-        label_files = sorted(glob.glob(f"{label_dir}/*_label_deface.nii"))[:n_subjects]
+        all_files = sorted(glob.glob(f"{label_dir}/*_label_deface.nii"))
+
+        if subject_ids:
+            wanted = set(s.strip() for s in subject_ids.split(",") if s.strip())
+            label_files = [lf for lf in all_files
+                           if any(f"/{sid}_label_deface" in lf for sid in wanted)]
+        else:
+            label_files = all_files[:n_subjects]
 
         results = []
         for i, lf in enumerate(label_files):
@@ -158,14 +166,31 @@ try:
         return results
 
     @app.local_entrypoint()
-    def main(n_subjects: int = 5, dx_mm: float = 2.0):
+    def main(n_subjects: int = 5, dx_mm: float = 2.0,
+             subject_ids: str = "", out: str = ""):
+        import json, pathlib
         t0 = time.perf_counter()
-        print(f"Running Birnbaum per-patient simulation ({n_subjects} subjects, dx={dx_mm}mm)...")
-        results = run_subjects.remote(n_subjects=n_subjects, dx_mm=dx_mm)
+        scope = subject_ids if subject_ids else f"first {n_subjects}"
+        print(f"Running Birnbaum per-patient simulation ({scope}, dx={dx_mm}mm)...")
+        results = run_subjects.remote(n_subjects=n_subjects, dx_mm=dx_mm,
+                                       subject_ids=subject_ids)
         total = time.perf_counter() - t0
         print(f"\nCompleted {len(results)} subjects in {total:.0f}s")
         for r in results:
             print(f"  {r['subject']}: brain_max={r['p_brain_max_pa']/1e3:.1f} kPa")
+
+        if not out:
+            tag = (subject_ids.replace(",", "_") if subject_ids
+                   else f"n{n_subjects}")
+            out = f"results/birnbaum_{tag}_dx{dx_mm}mm.json"
+        path = pathlib.Path(out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(
+            {"config": {"dx_mm": dx_mm, "freq_hz": FREQ_HZ,
+                        "source_pa": SOURCE_PRESSURE, "subject_ids": subject_ids,
+                        "n_subjects": n_subjects, "wall_time_s": total},
+             "results": results}, indent=2))
+        print(f"\nSaved full results to {path}")
 
 except ImportError:
     pass
