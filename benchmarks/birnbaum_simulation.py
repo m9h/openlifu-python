@@ -167,13 +167,15 @@ try:
 
     @app.local_entrypoint()
     def main(n_subjects: int = 5, dx_mm: float = 2.0,
-             subject_ids: str = "", out: str = ""):
+             subject_ids: str = "", out: str = "", gpu: str = "A100"):
         import json, pathlib
         t0 = time.perf_counter()
         scope = subject_ids if subject_ids else f"first {n_subjects}"
-        print(f"Running Birnbaum per-patient simulation ({scope}, dx={dx_mm}mm)...")
-        results = run_subjects.remote(n_subjects=n_subjects, dx_mm=dx_mm,
-                                       subject_ids=subject_ids)
+        print(f"Running Birnbaum per-patient simulation "
+              f"({scope}, dx={dx_mm}mm, gpu={gpu})...")
+        fn = run_subjects.with_options(gpu=gpu) if gpu != "A100" else run_subjects
+        results = fn.remote(n_subjects=n_subjects, dx_mm=dx_mm,
+                            subject_ids=subject_ids)
         total = time.perf_counter() - t0
         print(f"\nCompleted {len(results)} subjects in {total:.0f}s")
         for r in results:
