@@ -49,19 +49,30 @@ dependencies = [
   "scikit-image",
   "trimesh",
   "embreex; platform_machine=='x86_64' or platform_machine=='AMD64'",
-  "onnxruntime==1.18.0",
+  "onnxruntime>=1.18.0",
   "pydicom",
   "watchdog",
   "python-socketio[client]",
-  "jwave @ git+https://github.com/ucl-bug/jwave.git@main",
+  "jwave @ git+https://github.com/m9h/jwave.git@feature/configurable-alpha-power",
   "jaxdf>=0.3.0",
   "jax>=0.9.0",
 ]
 
 [project.optional-dependencies]
 jwave = [
-  "jwave @ git+https://github.com/ucl-bug/jwave.git@main",
+  "jwave @ git+https://github.com/m9h/jwave.git@feature/configurable-alpha-power",
   "jax>=0.9.0",
+]
+cuda = [
+  "jax-cuda12-pjrt>=0.9.0",
+  "jax-cuda12-plugin>=0.9.0",
+  "nvidia-cuda-runtime-cu12",
+  "nvidia-cudnn-cu12",
+  "nvidia-cublas-cu12",
+  "nvidia-cufft-cu12",
+  "nvidia-cusolver-cu12",
+  "nvidia-cusparse-cu12",
+  "nvidia-nvjitlink-cu12",
 ]
 test = [
   "pytest >=6",

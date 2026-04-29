@@ -16,7 +16,6 @@ from typing import Annotated, Any, Callable, Dict, List, Tuple
 
 import cv2
 import numpy as np
-import onnxruntime as ort
 import OpenEXR
 import trimesh
 import vtk
@@ -677,6 +676,7 @@ def make_masks(image_paths: list[Path], output_dir: Path, threshold: float = 0.0
     else:
         logger_meshrecon.info(f"Found existing MODNet checkpoint at {ckpt_path}")
 
+    import onnxruntime as ort  # lazy-imported: heavy and currently incompatible with numpy>=2 on aarch64
     session = ort.InferenceSession(ckpt_path, providers=["CPUExecutionProvider"])  # or CUDAExecutionProvider
 
     for image_path in image_paths:
