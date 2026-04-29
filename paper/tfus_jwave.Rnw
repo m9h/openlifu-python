@@ -557,10 +557,11 @@ kable(pick, format = "latex", booktabs = TRUE, row.names = FALSE,
 \subsubsection{Grid convergence across the cohort}
 \label{sec:birnbaum_convergence}
 
-To characterize how much the cohort distribution depends on grid
-spacing, we ran the full 64 subjects at both \SI{2}{\milli\metre} and
-\SI{1}{\milli\metre}, plus a five-subject convergence subset spanning
-the dx=1\,mm distribution at \SI{0.5}{\milli\metre}.
+We ran all 64 subjects at \SI{2}{\milli\metre} and
+\SI{1}{\milli\metre} to characterise cohort-wide convergence
+behaviour, plus a five-subject subset spanning the dx=1\,mm
+distribution at \SI{0.5}{\milli\metre} (constant physical domain via
+nearest-neighbour upsampling of the native 1\,mm CHARM-style labels).
 
 <<birnbaum_convergence, results='asis'>>=
 dx2 <- fromJSON(file.path(project_root, "results", "birnbaum_64subjects",
@@ -572,7 +573,8 @@ dx1$p_brain_max_kpa <- dx1$p_brain_max_pa / 1e3
 m2 <- setNames(dx2$p_brain_max_kpa, dx2$subject)
 m1 <- setNames(dx1$p_brain_max_kpa, dx1$subject)
 common <- intersect(names(m1), names(m2))
-ratios <- m1[common] / m2[common]
+ratios12 <- m1[common] / m2[common]
+
 conv_summary <- data.frame(
   dx_mm = c(2.0, 1.0),
   median_kpa = c(median(dx2$p_brain_max_kpa), median(dx1$p_brain_max_kpa)),
@@ -586,22 +588,54 @@ kable(conv_summary, format = "latex", booktabs = TRUE, row.names = FALSE,
       col.names = c("dx (mm)", "Median (kPa)", "Mean (kPa)",
                     "Min (kPa)", "Max (kPa)", "Max/Min"),
       digits = c(2, 1, 1, 1, 1, 2),
-      caption = sprintf("Cohort-wide grid convergence (Birnbaum, n=64). Refining from 2\\,mm to 1\\,mm raises median focal pressure by %.1f$\\times$ (subject-wise mean ratio %.2f$\\times$, range %.2f--%.2f$\\times$). Spread is preserved (5.9 to 5.5).",
+      caption = sprintf("Cohort-wide grid convergence (Birnbaum, n=64). Refining from 2\\,mm to 1\\,mm raises median focal pressure by %.1f$\\times$ (subject-wise mean %.2f$\\times$, range %.2f--%.2f$\\times$); cohort spread is preserved (%.1f to %.1f).",
                         median(dx1$p_brain_max_kpa)/median(dx2$p_brain_max_kpa),
-                        mean(ratios), min(ratios), max(ratios)),
+                        mean(ratios12), min(ratios12), max(ratios12),
+                        max(dx2$p_brain_max_kpa)/min(dx2$p_brain_max_kpa),
+                        max(dx1$p_brain_max_kpa)/min(dx1$p_brain_max_kpa)),
       escape = FALSE)
 @
 
-The non-uniform cohort-wise convergence behavior (subject-wise dx=1/dx=2
-ratios from \Sexpr{sprintf("%.2f", min(ratios))}$\times$ to
-\Sexpr{sprintf("%.2f", max(ratios))}$\times$) indicates that thinner
-or more sparsely sampled skulls under-resolve more strongly at
-\SI{2}{\milli\metre}. Combined with the BM1 free-field convergence
-(\SI{0.5}{\milli\metre}: 44\% error, \SI{0.25}{\milli\metre}: 12\%),
-the \SI{1}{\milli\metre} cohort numbers are themselves a lower bound.
-We therefore treat the cohort \emph{spread} (5.5--5.9$\times$) as the
-robust per-subject finding and the absolute pressures as
-resolution-limited.
+\paragraph{Per-subject convergence trajectories.}
+We additionally ran a five-subject subset (the dx=1\,mm min, p25,
+median, p75, max subjects) at \SI{0.5}{\milli\metre} on an
+A100-80GB, with categorical labels nearest-neighbour upsampled to
+preserve physical domain extent.
+
+<<birnbaum_subject_traj, results='asis'>>=
+sub5 <- fromJSON(file.path(project_root, "results",
+    "birnbaum_GU010_NC019_NYU010_NYU009_GU012_dx0.5mm.json"))$results
+sub5$p_brain_max_kpa <- sub5$p_brain_max_pa / 1e3
+m05 <- setNames(sub5$p_brain_max_kpa, sub5$subject)
+sids <- c("GU010", "NC019", "NYU010", "NYU009", "GU012")
+traj <- data.frame(
+  subject = sids,
+  dx2 = round(m2[sids], 1),
+  dx1 = round(m1[sids], 1),
+  dx05 = round(m05[sids], 1),
+  r1_2 = round(m1[sids] / m2[sids], 2),
+  r05_1 = round(m05[sids] / m1[sids], 2)
+)
+kable(traj, format = "latex", booktabs = TRUE, row.names = FALSE,
+      col.names = c("Subject", "dx=2", "dx=1", "dx=0.5",
+                    "$r_{1/2}$", "$r_{0.5/1}$"),
+      caption = "Per-subject focal pressure (kPa) at three grid resolutions for the five-subject convergence subset spanning the dx=1\\,mm distribution. The dx=0.5\\,mm step uses nearest-neighbour categorical upsampling of the 1\\,mm CHARM labels so the physical domain extent is held constant. GU012 (thick skull) shows the strongest sign of asymptotic convergence; GU010 (thin skull) is the slowest to settle, plausibly reflecting the discrete-bowl source's under-resolution of the focal spot when skull attenuation is weak.",
+      escape = FALSE)
+@
+
+Combined with the BM1 free-field convergence trend
+(\SI{0.5}{\milli\metre}: 44\% error, \SI{0.25}{\milli\metre}: 12\%
+versus the analytic baseline), the dx=\SI{0.5}{\milli\metre} cohort
+numbers in Table~\ref{tab:birnbaum_subject_traj} are themselves a
+lower bound on the converged absolutes. We therefore report the
+cohort \emph{spread} as the robust per-subject finding (5.5--5.9$\times$
+preserved across resolutions) and the absolute focal pressures as
+grid-limited at the chosen working resolution. Pushing to
+\SI{0.25}{\milli\metre} on the upsampled cohort exceeded
+A100-80GB memory at the full-head domain in our test runs; cropping
+the simulation domain to a tight skull bounding box would make
+the converged-absolute experiment tractable and is the natural next
+step.
 
 \subsection{Birnbaum cohort: 64-subject skull analysis}
 

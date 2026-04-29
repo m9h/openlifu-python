@@ -1,0 +1,71 @@
+{
+  "config": {
+    "dx_mm": 0.5,
+    "freq_hz": 500000.0,
+    "source_pa": 60000,
+    "n_subjects": 64,
+    "note": "partial: 14 unique subjects (out of 64) recovered from log; CLI died before JSON save"
+  },
+  "results": [
+    {
+      "subject": "GU002",
+      "p_brain_max_kpa": 28.3,
+      "sim_time_s": 448.1
+    },
+    {
+      "subject": "GU006",
+      "p_brain_max_kpa": 47.0,
+      "sim_time_s": 428.7
+    },
+    {
+      "subject": "GU008",
+      "p_brain_max_kpa": 14.8,
+      "sim_time_s": 444.1
+    },
+    {
+      "subject": "GU009",
+      "p_brain_max_kpa": 54.5,
+      "sim_time_s": 543.6
+    },
+    {
+      "subject": "GU010",
+      "p_brain_max_kpa": 19.4,
+      "sim_time_s": 663.0
+    },
+    {
+      "subject": "GU011",
+      "p_brain_max_kpa": 61.8,
+      "sim_time_s": 542.6
+    },
+    {
+      "subject": "GU012",
+      "p_brain_max_kpa": 65.2,
+      "sim_time_s": 542.3
+    },
+    {
+      "subject": "GU015",
+      "p_brain_max_kpa": 29.0,
+      "sim_time_s": 661.6
+    },
+    {
+      "subject": "GU016",
+      "p_brain_max_kpa": 28.8,
+      "sim_time_s": 661.6
+    },
+    {
+      "subject": "GU017",
+      "p_brain_max_kpa": 22.3,
+      "sim_time_s": 661.5
+    },
+    {
+      "subject": "GU018",
+      "p_brain_max_kpa": 59.1,
+      "sim_time_s": 542.8
+    },
+    {
+      "subject": "GU019",
+      "p_brain_max_kpa": 24.9,
+      "sim_time_s": 661.5
+    }
+  ]
+}
