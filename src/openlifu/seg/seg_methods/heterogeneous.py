@@ -22,7 +22,12 @@ from openlifu.seg.material import MATERIALS, PARAM_INFO, Material
 from openlifu.seg.seg_method import SegmentationMethod
 
 
-# Expanded materials dict with tissue types for skull modeling
+# Expanded materials dict with tissue types for skull modeling.
+# The default "skull" value (4080/1900/4.74) is the single-class
+# averaged skull from Connor 2002 / NDK constants used by the legacy
+# openlifu pipeline. The "cortical_bone" / "trabecular_bone" entries
+# are the two-class ITRUSST BM3 (Aubry 2022 Table III) values used by
+# PRESTUS / SimNIBS replications -- consumed via PRESTUS_LABEL_TO_MATERIAL.
 _HETEROGENEOUS_MATERIALS = {
     "water": Material(name="Water", sound_speed=1500.0, density=1000.0, attenuation=0.0,
                       specific_heat=4182.0, thermal_conductivity=0.598),
@@ -30,6 +35,12 @@ _HETEROGENEOUS_MATERIALS = {
                       specific_heat=3391.0, thermal_conductivity=0.37),
     "skull": Material(name="Skull", sound_speed=4080.0, density=1900.0, attenuation=4.74,
                       specific_heat=1100.0, thermal_conductivity=0.30),
+    "cortical_bone": Material(name="Cortical Bone", sound_speed=2800.0, density=1850.0,
+                              attenuation=4.0, specific_heat=1313.0,
+                              thermal_conductivity=0.32),
+    "trabecular_bone": Material(name="Trabecular Bone", sound_speed=2300.0, density=1700.0,
+                                attenuation=8.0, specific_heat=2274.0,
+                                thermal_conductivity=0.31),
     "csf": Material(name="CSF", sound_speed=1500.0, density=1000.0, attenuation=0.0,
                     specific_heat=4182.0, thermal_conductivity=0.598),
     "gray_matter": Material(name="Gray Matter", sound_speed=1560.0, density=1040.0, attenuation=5.3,
@@ -38,7 +49,7 @@ _HETEROGENEOUS_MATERIALS = {
                              specific_heat=3600.0, thermal_conductivity=0.50),
 }
 
-# Map integer tissue labels to material keys (openlifu convention)
+# Default: 6-class openlifu convention, single skull material (legacy).
 _LABEL_TO_MATERIAL = {
     0: "water",
     1: "scalp",
@@ -46,6 +57,20 @@ _LABEL_TO_MATERIAL = {
     3: "csf",
     4: "gray_matter",
     5: "white_matter",
+}
+
+# PRESTUS-compatible 7-class convention with cortical/trabecular split.
+# Used by the SimNIBS replication path: CHARM compact bone -> 2 (cortical),
+# CHARM spongy bone -> 6 (trabecular), so the simulator sees the two-class
+# Aubry 2022 BM3 properties instead of the averaged single-skull value.
+PRESTUS_LABEL_TO_MATERIAL = {
+    0: "water",
+    1: "scalp",
+    2: "cortical_bone",
+    3: "csf",
+    4: "gray_matter",
+    5: "white_matter",
+    6: "trabecular_bone",
 }
 
 # SimNIBS CHARM/headreco uses a different label convention.
@@ -115,6 +140,7 @@ class HeterogeneousSkullSegmentation(SegmentationMethod):
     source: str = "labels"
     label_array: Optional[np.ndarray] = field(default=None, repr=False)
     pseudoct_method: str = "plymouth"
+    label_to_material: Optional[dict[int, str]] = field(default=None, repr=False)
 
     def __init__(
         self,
@@ -123,6 +149,7 @@ class HeterogeneousSkullSegmentation(SegmentationMethod):
         pseudoct_method: str = "plymouth",
         materials: Optional[dict[str, Material]] = None,
         ref_material: str = "water",
+        label_to_material: Optional[dict[int, str]] = None,
     ):
         if materials is None:
             materials = _HETEROGENEOUS_MATERIALS.copy()
@@ -132,6 +159,7 @@ class HeterogeneousSkullSegmentation(SegmentationMethod):
         self.source = source
         self.label_array = label_array
         self.pseudoct_method = pseudoct_method
+        self.label_to_material = label_to_material
 
     def _segment(self, volume: xa.DataArray) -> xa.DataArray:
         """
@@ -231,18 +259,23 @@ class HeterogeneousSkullSegmentation(SegmentationMethod):
         """
         Override base class to map integer labels to material properties.
 
-        Uses the _LABEL_TO_MATERIAL mapping to convert SCI-style integer labels
-        to the named materials in self.materials.
+        Uses ``self.label_to_material`` (when provided) or the global
+        ``_LABEL_TO_MATERIAL`` (default openlifu 6-class convention) to
+        convert integer labels to the named materials in ``self.materials``.
+        Pass ``label_to_material=PRESTUS_LABEL_TO_MATERIAL`` at construction
+        time to enable the cortical/trabecular two-class skull split used
+        by SimNIBS / PRESTUS replications.
         """
         materials = self.materials if materials is None else materials
         ref_mat = materials[self.ref_material]
+        label_map = self.label_to_material if self.label_to_material is not None else _LABEL_TO_MATERIAL
         params = xa.Dataset()
 
         for param_id in PARAM_INFO:
             info = Material.param_info(param_id)
             param_data = np.full(seg.shape, ref_mat.get_param(param_id))
 
-            for label_int, material_key in _LABEL_TO_MATERIAL.items():
+            for label_int, material_key in label_map.items():
                 if material_key in materials:
                     mat = materials[material_key]
                     param_data[seg.data == label_int] = mat.get_param(param_id)

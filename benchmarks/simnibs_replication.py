@@ -44,13 +44,13 @@ DEFAULT_N_BOWL_POINTS = 256
 
 
 def _bbox_around_skull(labels: np.ndarray, pad_voxels: int = 8) -> tuple[slice, slice, slice]:
-    """Tight bbox around skull voxels (label 2) plus padding.
+    """Tight bbox around skull voxels (cortical=2, trabecular=6) plus padding.
 
     Cropping the simulation domain to the skull + a small padding keeps
     grid sizes manageable at fine resolutions; the rest of the head
     contributes nothing to a transducer→brain focal calculation.
     """
-    skull = labels == 2
+    skull = (labels == 2) | (labels == 6)
     if not skull.any():
         return tuple(slice(None) for _ in range(3))
     coords = np.argwhere(skull)
@@ -72,6 +72,10 @@ def simulate_subject(
     crop_to_skull: bool = True,
     tol: float = 1e-3,
     maxiter: int = 300,
+    time_domain: bool = False,
+    cycles: float = 20.0,
+    cfl: float = 0.3,
+    ppw_target: float = 12.0,
 ) -> dict:
     """Run a CW Helmholtz forward simulation through one SimNIBS head model.
 
@@ -102,8 +106,12 @@ def simulate_subject(
     from openlifu.seg.simnibs import (
         load_simnibs_segmentation, remap_charm_to_openlifu,
     )
-    from openlifu.seg.seg_methods.heterogeneous import HeterogeneousSkullSegmentation
-    from openlifu.sim.jwave_if import run_cw_simulation
+    from openlifu.seg.seg_methods.heterogeneous import (
+        HeterogeneousSkullSegmentation, PRESTUS_LABEL_TO_MATERIAL,
+    )
+    from openlifu.sim.jwave_if import (
+        check_ppw, run_cw_simulation, run_simulation_peak,
+    )
     from openlifu.xdc.bowl import bowl_transducer_3d
     from openlifu.xdc.element import Element
     from openlifu.xdc.transducer import Transducer
@@ -133,11 +141,17 @@ def simulate_subject(
         for i, dim in enumerate(("x", "y", "z"))
     })
 
-    seg = HeterogeneousSkullSegmentation(source="labels", label_array=labels)
+    seg = HeterogeneousSkullSegmentation(
+        source="labels", label_array=labels,
+        label_to_material=PRESTUS_LABEL_TO_MATERIAL,
+    )
     volume = xa.DataArray(np.zeros(shape), coords=coords)
     params = seg.seg_params(volume)
 
-    n_skull = int((labels == 2).sum())
+    # Skull = cortical (label 2) + trabecular (label 6) under PRESTUS scheme.
+    n_skull_cortical = int((labels == 2).sum())
+    n_skull_trabecular = int((labels == 6).sum())
+    n_skull = n_skull_cortical + n_skull_trabecular
     n_brain = int(((labels == 4) | (labels == 5)).sum())
 
     # Focal target: voxel-space centre + user offset (in mm).
@@ -146,9 +160,9 @@ def simulate_subject(
     focal_m = focal_mm * 1e-3
 
     # Transducer points down the +x axis from the skull-anterior side.
-    # If the skull mask is present, place the bowl 5 mm anterior to the
-    # min-x extent of the skull (consistent with birnbaum_simulation.py).
-    skull_mask = labels == 2
+    # If a skull (cortical or trabecular) mask is present, place the bowl
+    # 5 mm anterior to the min-x extent of the combined skull.
+    skull_mask = (labels == 2) | (labels == 6)
     if skull_mask.any():
         skull_min_x = int(np.argwhere(skull_mask)[:, 0].min())
         bowl_anchor_m = np.array([
@@ -179,17 +193,45 @@ def simulate_subject(
     tx = Transducer(id=f"simnibs_{subject_id}", elements=elements,
                     frequency=frequency_hz, units="m")
 
-    log.info("Running jwave Helmholtz solver (f=%.1f kHz, dx=%.2f mm, "
-             "shape=%s, %d bowl elements)",
-             frequency_hz / 1e3, dx_mm, shape, len(elements))
-    t0 = time.perf_counter()
-    ds, _ = run_cw_simulation(
-        arr=tx, params=params, freq=frequency_hz, amplitude=source_pa,
-        pml_size=8, tol=tol, maxiter=maxiter,
-    )
-    sim_time = time.perf_counter() - t0
+    if ppw_target > 0:
+        ppw = check_ppw(np.asarray(params['sound_speed'].data),
+                         frequency_hz, dx_mm * 1e-3, target=ppw_target)
+    else:
+        from openlifu.sim.jwave_if import points_per_wavelength
+        ppw_val = points_per_wavelength(np.asarray(params['sound_speed'].data),
+                                         frequency_hz, dx_mm * 1e-3)
+        ppw = {"ppw": ppw_val, "ok": False, "target": ppw_target,
+               "minimum": 0.0}
+    log.info("PPW = %.2f at dx=%.2f mm, f=%.0f kHz (target %.0f, %s)",
+             ppw['ppw'], dx_mm, frequency_hz / 1e3, ppw_target,
+             "ok" if ppw['ok'] else "below target")
 
-    p_amp = np.asarray(ds.p_amp.data)
+    if time_domain:
+        log.info("Running jwave time-domain PSTD with peak-pressure carry "
+                 "(f=%.1f kHz, dx=%.2f mm, shape=%s, %d bowl elements, "
+                 "%g cycles)",
+                 frequency_hz / 1e3, dx_mm, shape, len(elements), cycles)
+        t0 = time.perf_counter()
+        ds, _ = run_simulation_peak(
+            arr=tx, params=params, freq=frequency_hz, amplitude=source_pa,
+            cycles=cycles, cfl=cfl, pml_size=8, ppw_target=ppw_target,
+        )
+        sim_time = time.perf_counter() - t0
+        p_amp = np.asarray(ds.p_max.data)  # peak positive pressure
+        p_neg = np.asarray(ds.p_min.data)  # |peak negative| (PNP magnitude)
+    else:
+        log.info("Running jwave Helmholtz solver (f=%.1f kHz, dx=%.2f mm, "
+                 "shape=%s, %d bowl elements)",
+                 frequency_hz / 1e3, dx_mm, shape, len(elements))
+        t0 = time.perf_counter()
+        ds, _ = run_cw_simulation(
+            arr=tx, params=params, freq=frequency_hz, amplitude=source_pa,
+            pml_size=8, tol=tol, maxiter=maxiter,
+        )
+        sim_time = time.perf_counter() - t0
+        p_amp = np.asarray(ds.p_amp.data)
+        p_neg = None
+
     brain_mask = (labels == 4) | (labels == 5)
     p_brain = p_amp[brain_mask] if brain_mask.any() else p_amp.ravel()
 
@@ -197,15 +239,25 @@ def simulate_subject(
         "subject": subject_id,
         "shape": list(shape),
         "dx_mm": dx_mm,
+        "ppw": float(ppw['ppw']),
+        "ppw_ok": bool(ppw['ok']),
+        "mode": "time_domain" if time_domain else "cw_helmholtz",
         "frequency_hz": frequency_hz,
         "aperture_m": aperture_m,
         "focal_length_m": focal_length_m,
         "source_pa": source_pa,
         "n_skull": n_skull,
+        "n_skull_cortical": n_skull_cortical,
+        "n_skull_trabecular": n_skull_trabecular,
         "n_brain": n_brain,
         "p_amp_max_pa": float(p_amp.max()),
         "p_brain_max_pa": float(p_brain.max()) if len(p_brain) else 0.0,
         "p_brain_mean_pa": float(p_brain.mean()) if len(p_brain) else 0.0,
+        "p_neg_max_pa": float(np.abs(p_neg).max()) if p_neg is not None else None,
+        "p_brain_neg_max_pa": (
+            float(np.abs(p_neg[brain_mask]).max())
+            if p_neg is not None and brain_mask.any() else None
+        ),
         "sim_time_s": sim_time,
         "p_amp_pa": p_amp,  # full field for NIfTI export
     }
@@ -234,6 +286,17 @@ def main() -> None:
     p.add_argument("--no-crop", action="store_true", help="Skip skull-bbox crop (full head domain)")
     p.add_argument("--tol", type=float, default=1e-3)
     p.add_argument("--maxiter", type=int, default=300)
+    p.add_argument("--time-domain", action="store_true",
+                   help="Run time-domain PSTD with peak-pressure carry "
+                        "(reports PPP and PNP; matches PRESTUS output). "
+                        "Default is the CW Helmholtz solver.")
+    p.add_argument("--cycles", type=float, default=20.0,
+                   help="Number of source cycles for time-domain mode")
+    p.add_argument("--cfl", type=float, default=0.3,
+                   help="CFL number for time-domain mode")
+    p.add_argument("--ppw-target", type=float, default=12.0,
+                   help="Target points-per-wavelength (warning if below; "
+                        "set 0 to disable check)")
     p.add_argument("--out-dir", default="results")
     args = p.parse_args()
 
@@ -247,21 +310,27 @@ def main() -> None:
         focal_length_m=args.focal_length_mm * 1e-3,
         source_pa=args.source_pa, target_mm=tuple(args.target_mm),
         crop_to_skull=not args.no_crop, tol=args.tol, maxiter=args.maxiter,
+        time_domain=args.time_domain, cycles=args.cycles, cfl=args.cfl,
+        ppw_target=args.ppw_target,
     )
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    base = f"simnibs_{sid}_dx{args.dx_mm}mm"
+    mode_tag = "td" if args.time_domain else "cw"
+    base = f"simnibs_{sid}_dx{args.dx_mm}mm_{mode_tag}"
 
     p_amp = r.pop("p_amp_pa")
     _save_pressure_nifti(p_amp, args.dx_mm, out_dir / f"{base}_p_amp.nii.gz")
     (out_dir / f"{base}.json").write_text(json.dumps(r, indent=2))
 
-    print(f"\n{'='*60}\nSimNIBS replication: {sid}\n{'='*60}")
-    print(f"  shape={r['shape']}, dx={args.dx_mm} mm")
+    print(f"\n{'='*60}\nSimNIBS replication: {sid} ({r['mode']})\n{'='*60}")
+    print(f"  shape={r['shape']}, dx={args.dx_mm} mm, "
+          f"PPW={r['ppw']:.1f} ({'ok' if r['ppw_ok'] else 'BELOW TARGET'})")
     print(f"  brain p_max = {r['p_brain_max_pa']/1e3:.1f} kPa")
     print(f"  brain p_mean = {r['p_brain_mean_pa']/1e3:.2f} kPa")
     print(f"  domain p_max = {r['p_amp_max_pa']/1e3:.1f} kPa")
+    if r.get('p_brain_neg_max_pa') is not None:
+        print(f"  brain |PNP| = {r['p_brain_neg_max_pa']/1e3:.1f} kPa")
     print(f"  sim_time = {r['sim_time_s']:.1f} s")
     print(f"\nSaved {out_dir / (base + '.json')} and {out_dir / (base + '_p_amp.nii.gz')}")
 

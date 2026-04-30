@@ -56,13 +56,13 @@ SIMNIBS_LABEL_NAMES: Dict[int, str] = {
 }
 
 
-# Map CHARM 4+ 11-class labels onto openlifu's 6-class convention used by
-# HeterogeneousSkullSegmentation (0=water, 1=scalp, 2=skull, 3=csf,
-# 4=gray_matter, 5=white_matter). Compact + spongy bone collapse into a
-# single skull class; eyes/blood/muscle/air map coarsely to their nearest
-# openlifu material. For studies needing the cortical/trabecular split or
-# distinct soft-tissue properties, use ``map_simnibs_labels_to_acoustic``
-# directly on the CHARM labels instead of going through this remap.
+# Map CHARM 4+ 11-class labels onto openlifu's PRESTUS-compatible 7-class
+# convention (HeterogeneousSkullSegmentation with PRESTUS_LABEL_TO_MATERIAL):
+#   0=water, 1=scalp, 2=cortical_bone, 3=csf, 4=gray_matter,
+#   5=white_matter, 6=trabecular_bone.
+# This preserves the ITRUSST BM3 (Aubry 2022) two-class skull split that
+# PRESTUS / SimNIBS use, instead of collapsing compact+spongy into a
+# single averaged skull material.
 CHARM_TO_OPENLIFU: Dict[int, int] = {
     0: 0,   # Background    -> water
     1: 5,   # White matter  -> white_matter
@@ -70,22 +70,39 @@ CHARM_TO_OPENLIFU: Dict[int, int] = {
     3: 3,   # CSF           -> csf
     5: 1,   # Scalp         -> scalp
     6: 0,   # Eyes          -> water (vitreous humour ~ water acoustically)
-    7: 2,   # Compact bone  -> skull
-    8: 2,   # Spongy bone   -> skull
+    7: 2,   # Compact bone  -> cortical_bone (label 2 in PRESTUS scheme)
+    8: 6,   # Spongy bone   -> trabecular_bone
     9: 0,   # Blood         -> water (high water content; coarse)
     10: 1,  # Muscle        -> scalp (similar c, rho)
     11: 0,  # Air pockets   -> water (USCT coupling default)
 }
 
+# Legacy single-skull remap: collapses compact + spongy bone into a single
+# class 2 ("skull"), matching the original 6-class openlifu convention.
+# Use this when you intentionally want to feed CHARM data into a pipeline
+# that only knows the single-skull material (e.g. an existing pre-PRESTUS
+# study). The default is the two-class ``CHARM_TO_OPENLIFU`` above.
+CHARM_TO_OPENLIFU_LEGACY: Dict[int, int] = {
+    **CHARM_TO_OPENLIFU,
+    8: 2,   # Spongy bone -> skull (collapse with compact)
+}
 
-def remap_charm_to_openlifu(labels: np.ndarray) -> np.ndarray:
-    """Convert CHARM 4+ 11-class labels to openlifu's 6-class convention.
 
-    Use this to feed a SimNIBS m2m segmentation into
-    ``HeterogeneousSkullSegmentation(source='labels')``.
+def remap_charm_to_openlifu(labels: np.ndarray, *, legacy: bool = False) -> np.ndarray:
+    """Convert CHARM 4+ 11-class labels to openlifu's PRESTUS-compatible scheme.
+
+    By default produces the 7-class PRESTUS convention with cortical
+    (label 2) and trabecular (label 6) bone separated. Pair the result
+    with ``HeterogeneousSkullSegmentation(label_to_material=PRESTUS_LABEL_TO_MATERIAL)``
+    so the simulator sees the ITRUSST BM3 two-class skull properties.
+
+    Set ``legacy=True`` to use the older single-skull remap that
+    collapses compact + spongy into class 2 (matches the pre-PRESTUS
+    openlifu pipeline).
     """
+    table = CHARM_TO_OPENLIFU_LEGACY if legacy else CHARM_TO_OPENLIFU
     out = np.zeros_like(labels, dtype=np.int32)
-    for src, dst in CHARM_TO_OPENLIFU.items():
+    for src, dst in table.items():
         out[labels == src] = dst
     return out
 
