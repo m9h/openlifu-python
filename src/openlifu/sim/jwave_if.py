@@ -78,6 +78,77 @@ def check_ppw(
     return {"ppw": ppw, "ok": ppw >= target, "target": target, "minimum": minimum}
 
 
+def make_toneburst(
+    freq_hz: float,
+    dt: float,
+    n_cycles: int,
+    *,
+    delay: float = 0.0,
+    amplitude: float = 1.0,
+    pad_cycles: float = 2.0,
+) -> jnp.ndarray:
+    """Generate a delayed sinusoidal toneburst signal.
+
+    A finite-duration sin wave windowed to ``[delay, delay + n_cycles/freq]``,
+    suitable as the input signal for a single transducer element. The
+    array is padded by ``pad_cycles / freq`` of zeros at the end so
+    downstream solvers see clean trailing edge.
+
+    PRESTUS / k-Plan style transient simulations use 8-12 cycle bursts;
+    pure CW analysis (steady-state) typically uses 20+ cycles or the
+    Helmholtz solver instead.
+    """
+    duration = n_cycles / freq_hz
+    total_time = delay + duration + pad_cycles / freq_hz
+    n_samples = int(total_time / dt) + 1
+    t = jnp.arange(n_samples) * dt
+
+    signal = amplitude * jnp.sin(2.0 * jnp.pi * freq_hz * (t - delay))
+    window = jnp.where((t >= delay) & (t <= delay + duration), 1.0, 0.0)
+    return signal * window
+
+
+def make_tonebursts_vectorised(
+    freq_hz: float,
+    dt: float,
+    n_cycles: int,
+    delays: jnp.ndarray,
+    amplitudes: jnp.ndarray,
+    *,
+    max_delay: float = 50e-6,
+    pad_cycles: float = 2.0,
+) -> jnp.ndarray:
+    """Generate per-element delayed tonebursts in one JAX-traceable call.
+
+    JAX-differentiable w.r.t. ``delays`` and ``amplitudes`` so this can
+    be used directly inside autodiff-based delay-optimisation pipelines
+    (see ``openlifu.sim.optimize_delays``).
+
+    Args:
+        freq_hz: Drive frequency.
+        dt: Time step (s).
+        n_cycles: Burst duration in cycles.
+        delays: ``(n_elements,)`` per-element delays in seconds.
+        amplitudes: ``(n_elements,)`` per-element apodisation weights.
+        max_delay: Upper bound on delays used to size the time axis.
+            Must accommodate the largest absolute delay in ``delays``.
+        pad_cycles: Trailing zero-padding in cycles.
+
+    Returns:
+        ``(n_elements, n_samples)`` toneburst array.
+    """
+    duration = n_cycles / freq_hz
+    total_time = max_delay + duration + pad_cycles / freq_hz
+    n_samples = int(total_time / dt) + 1
+    t = jnp.arange(n_samples) * dt
+    t_shifted = t[jnp.newaxis, :] - delays[:, jnp.newaxis]
+    signal = jnp.sin(2.0 * jnp.pi * freq_hz * t_shifted)
+    window = jnp.where(
+        (t_shifted >= 0.0) & (t_shifted <= duration), 1.0, 0.0,
+    )
+    return amplitudes[:, jnp.newaxis] * signal * window
+
+
 def _dim_names(coords: xa.Coordinates) -> list[str]:
     """Extract the ordered spatial dimension names from xarray Coordinates.
 
